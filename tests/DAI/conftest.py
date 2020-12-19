@@ -67,6 +67,11 @@ def strategist(accounts, whale, currency):
 @pytest.fixture
 def samdev(accounts):
     yield accounts.at('0xC3D6880fD95E06C816cB030fAc45b3ffe3651Cb0', force=True)
+
+@pytest.fixture
+def creamdev(accounts):
+    yield accounts.at('0x6D5a7597896A703Fe8c85775B23395a48f971305', force=True)
+
 @pytest.fixture
 def gov(accounts):
     yield accounts[3]
@@ -204,6 +209,14 @@ def comp(interface):
 def cdai(interface):
     yield interface.CErc20I('0x5d3a536e4d6dbd6114cc1ead35777bab948e3643')
 
+@pytest.fixture
+def ibdai(interface):
+    yield interface.CErc20I('0x8e595470Ed749b85C6F7669de83EAe304C2ec68F')
+
+@pytest.fixture
+def ironbank(interface):
+    yield interface.IronBankControllerI('0xAB1c342C7bf5Ec5F02ADEA1c2270670bCa144CbB')
+
 #@pytest.fixture(autouse=True)
 #def isolation(fn_isolation):
 #    pass
@@ -253,12 +266,14 @@ def strategy(strategist,gov, keeper, vault,  Strategy, cdai):
     strategy = strategist.deploy(Strategy,vault, cdai)
     strategy.setKeeper(keeper)
 
+
     vault.addStrategy(
         strategy,
         2 ** 256 - 1,2 ** 256 - 1, 
         1000,  # 0.5% performance fee for Strategist
         {"from": gov},
     )
+
     yield strategy
 
 @pytest.fixture()

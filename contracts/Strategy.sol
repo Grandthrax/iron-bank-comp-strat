@@ -313,21 +313,6 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
         }
      }
 
-
-    /*function borrowFromIronBank(uint256 amountRequested) internal returns (uint256 amountReturned) {
-
-        uint256 available = ironBankRemainingCredit();
-
-        uint256 toBorrow = Math.min(available.mul(99).div(100), amountRequested); // dont take full limit
-        uint256 bBefore = want.balanceOf(address(this));
-        if(toBorrow > 1e18) // note this is for dai. be careful of decimals
-        {
-            ironBankToken.borrow(toBorrow);
-
-            amountReturned = want.balanceOf(address(this)).sub(bBefore);
-        } 
-     }*/
-
      function ironBankRemainingCredit() public view returns (uint256 available) {
 
         (, uint256 liquidity,) = ironBank.getAccountLiquidity(address(this));
@@ -552,8 +537,9 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
 
         uint256 investedBalance = deposits.sub(borrows);
         uint256 balance = investedBalance.add(wantBalance);
-
-        uint256 debt = vault.strategies(address(this)).totalDebt;
+        
+        uint256 ibDebt = ironBankToken.borrowBalanceCurrent(address(this)); 
+        uint256 debt = vault.strategies(address(this)).totalDebt.add(ibDebt);
 
         //Balance - Total Debt is profit
         if (balance > debt) {
@@ -585,6 +571,17 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
         //emergency exit is dealt with in prepareReturn
         if (emergencyExit) {
             return;
+        }
+
+        //start off by borrowing or returning:
+        (bool borrowMore, uint256 amount) = internalCreditOfficer();
+
+        //if repaying we use debOutstanding
+        if(!borrowMore){
+            _debtOutstanding = amount;
+        }else if(amount > 0){
+            //borrow the amount we want
+            ironBankToken.borrow(amount);
         }
 
         //we are spending all our cash unless we have debt outstanding
@@ -623,6 +620,12 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
                 }
 
             }
+        }
+
+        if(!borrowMore){
+            //now we have debt outstanding lent without being needed:
+            cToken.redeemUnderlying(_debtOutstanding);
+
         }
     }
 
@@ -790,6 +793,13 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
     function exitPosition(uint256 _debtOutstanding) internal override returns (uint256 _profit,
             uint256 _loss,
             uint256 _debtPayment){
+
+        //we pay off idebt first
+        uint256 ibDebt = ironBankToken.borrowBalanceCurrent(address(this)); 
+        _withdrawSome(ibDebt);
+        uint256 available  = Math.min(ibDebt, want.balanceOf(address(this)));
+        cToken.repayBorrow(available);
+
 
         //we dont use getCurrentPosition() because it won't be exact
         (uint256 deposits, uint256 borrows) = getLivePosition();

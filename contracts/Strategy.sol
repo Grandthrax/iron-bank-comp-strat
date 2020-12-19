@@ -464,18 +464,27 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
         uint256 supplyRate = model.getSupplyRate(cashPrior, totalBorrows, reserves, reserverFactor);
         uint256 borrowRate = model.getBorrowRate(cashPrior, totalBorrows, reserves);
 
-        (uint256 deposits, uint256 borrows) = getCurrentPosition();
-        supplyRate = supplyRate.mul(deposits).div(1e18);
-        borrowRate = borrowRate.mul(borrows).div(1e18);
+
 
         uint256 compPerBlock = compBlockShare();
         uint256 estimatedWant =  priceCheck(comp, address(want),compPerBlock);
-        uint256 compRate = estimatedWant.mul(9).div(10); //10% pessimist
+        uint256 compRate;
+        if(estimatedWant != 0){
+            compRate = estimatedWant.mul(9).div(10); //10% pessimist
+            //now need to scale. compPerBlock is out total. 
+            compRate = compRate.mul(1e18).div(netBalanceLent());
 
+        }
+        
         //our supply rate is: 
         //comp + lend - borrow
-        supply = compRate.add(supplyRate).sub(borrowRate);
-
+        supplyRate = compRate.add(supplyRate);
+        if(supplyRate > borrowRate){
+            supply = supplyRate.sub(borrowRate);
+        }else{
+            supply = 0;
+        }
+        
          
     }
 

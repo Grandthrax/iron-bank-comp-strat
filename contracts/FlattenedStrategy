@@ -460,7 +460,7 @@ interface InterestRateModel {
         uint256 cash,
         uint256 borrows,
         uint256 reserves
-    ) external view returns (uint256, uint256);
+    ) external view returns (uint256);
 
     /**
      * @notice Calculates the current supply interest rate per block
@@ -772,12 +772,16 @@ interface CErc20I is CTokenI {
 }
 
 pragma solidity >=0.5.0;
+interface PriceOracle{
 
+    function getUnderlyingPrice(address ctoken) external view returns (uint256);
+}
 
 interface ComptrollerI {
     function enterMarkets(address[] calldata cTokens) external returns (uint256[] memory);
 
     function exitMarket(address cToken) external returns (uint256);
+    function oracle() external view returns (PriceOracle);
 
     /*** Policy Hooks ***/
 
@@ -2115,101 +2119,115 @@ pragma experimental ABIEncoderV2;
 
 
 
-/********************
- *
- *   A lender optimisation strategy for any erc20 asset
- *   https://github.com/Grandthrax/yearnV2-generic-lender-strat
- *   v0.2.2
- *
- ********************* */
-
 contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
     using SafeERC20 for IERC20;
     using Address for address;
     using SafeMath for uint256;
 
     // @notice emitted when trying to do Flash Loan. flashLoan address is 0x00 when no flash loan used
-    event Leverage(uint256 amountRequested, uint256 amountGiven, bool deficit, address flashLoan);
+    //event Leverage(uint256 amountRequested, uint256 amountGiven, bool deficit, address flashLoan);
 
     //Flash Loan Providers
-    address private constant SOLO = 0x1E0447b19BB6EcFdAe1e4AE1694b0C3659614e4e;
-    address private constant AAVE_LENDING = 0x24a42fD28C976A61Df5D00D0599C34c4f90748c8;
-    ILendingPoolAddressesProvider public addressesProvider;
+    address private SOLO;
 
     // Comptroller address for compound.finance
-    ComptrollerI public constant compound = ComptrollerI(0x3d9819210A31b4961b30EF54bE2aeD79B9c9Cd3B);
+    ComptrollerI private compound;
+
+    //IRON BANK
+    ComptrollerI private ironBank;
+    CErc20I private ironBankToken;
+    uint256 public maxIronBankLeverage = 4; //max leverage we will take from iron bank
 
     //Only three tokens we use
-    address public constant comp = address(0xc00e94Cb662C3520282E6f5717214004A7f26888);
-    CErc20I public cToken;
-    //address public constant DAI = address(0x6B175474E89094C44Da98b954EedeAC495271d0F);
+    address private comp;
+    CErc20I private cToken;
 
-    address public constant uniswapRouter = address(0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D);
-    address public constant weth = address(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2);
+    address private uniswapRouter;
+    address private weth;
 
     //Operating variables
-    uint256 public collateralTarget = 0.73 ether; // 73%
-    uint256 public blocksToLiquidationDangerZone = 46500; // 7 days =  60*60*24*7/13
+    uint256 private collateralTarget = 0.73 ether; // 73%
+    uint256 private blocksToLiquidationDangerZone = 46500; // 7 days =  60*60*24*7/13
+    uint256 public step = 10;
 
-    uint256 public minWant = 0; //Only lend if we have enough want to be worth it. Can be set to non-zero
+    uint256 private minWant = 0; //Only lend if we have enough want to be worth it. Can be set to non-zero
     uint256 public minCompToSell = 0.1 ether; //used both as the threshold to sell but also as a trigger for harvest
 
     //To deactivate flash loan provider if needed
-    bool public DyDxActive = true;
-    bool public AaveActive = true;
+    bool private DyDxActive = true;
 
-    uint256 public dyDxMarketId;
+    uint256 private dyDxMarketId;
 
-    constructor(address _vault, address _cToken) public BaseStrategy(_vault) {
+    constructor(
+        address _vault,
+        address _cToken,
+        address _solo,
+        ComptrollerI _compound,
+        ComptrollerI _ironBank,
+        CErc20I _ironBankToken,
+        address _comp,
+        address _uniswapRouter,
+        address _weth
+
+    ) public BaseStrategy(_vault) {
+        SOLO = _solo;
+        compound = _compound;
+        ironBank = _ironBank;
+        ironBankToken = _ironBankToken;
+        comp = _comp;
+        uniswapRouter = _uniswapRouter;
+        weth = _weth;
+
         cToken = CErc20I(address(_cToken));
 
         //pre-set approvals
-        IERC20(comp).safeApprove(uniswapRouter, uint256(-1));
+        IERC20(_comp).safeApprove(_uniswapRouter, uint256(-1));
         want.safeApprove(address(cToken), uint256(-1));
-        want.safeApprove(SOLO, uint256(-1));
+        want.safeApprove(_solo, uint256(-1));
+        want.safeApprove(address(ironBankToken), uint256(-1));
 
         // You can set these parameters on deployment to whatever you want
         minReportDelay = 86400; // once per 24 hours
         profitFactor = 100; // multiple before triggering harvest
+        debtThreshold = 50*1e18; // don't borrow borrowing if less than debtThreshold
 
-        dyDxMarketId = _getMarketIdFromTokenAddress(SOLO, address(want));
-
-        addressesProvider = ILendingPoolAddressesProvider(AAVE_LENDING);
-
-        //we do this horrible thing because you can't compare strings in solidity
-        require(keccak256(bytes(apiVersion())) == keccak256(bytes(VaultAPI(_vault).apiVersion())), "WRONG VERSION");
+        dyDxMarketId = _getMarketIdFromTokenAddress(_solo, address(want));
     }
 
     function name() external override pure returns (string memory){
-        return "GenericLevCompFarm";
+        return "IBLevComp";
     }
 
     /*
      * Control Functions
      */
-    function setDyDx(bool _dydx) external management {
-        DyDxActive = _dydx;
+    function setIsDyDxActive(bool _isActive) external onlyAuthorized {
+        DyDxActive = _isActive;
     }
 
-    function setAave(bool _ave) external management {
-        AaveActive = _ave;
-    }
-
-    function setMinCompToSell(uint256 _minCompToSell) external management {
+    function setMinCompToSell(uint256 _minCompToSell) external onlyAuthorized {
         minCompToSell = _minCompToSell;
     }
 
-    function setMinWant(uint256 _minWant) external management {
+    function setIronBankLeverage(uint256 _multiple) external onlyGovernance {
+        maxIronBankLeverage = _multiple;
+    }
+    
+    function setStep(uint256 _step) external onlyGovernance {
+        step = _step;
+    }
+
+    function setMinWant(uint256 _minWant) external onlyAuthorized {
         minWant = _minWant;
     }
 
-    function updateMarketId() external management {
+    function updateMarketId() external onlyAuthorized {
         dyDxMarketId = _getMarketIdFromTokenAddress(SOLO, address(want));
     }
 
-    function setCollateralTarget(uint256 _collateralTarget) external management {
+    function setCollateralTarget(uint256 _collateralTarget) external onlyAuthorized {
         (, uint256 collateralFactorMantissa, ) = compound.markets(address(cToken));
-        require(collateralFactorMantissa > _collateralTarget, "!dangerous collateral");
+        require(collateralFactorMantissa > _collateralTarget); //, "!dangerous collateral"
         collateralTarget = _collateralTarget;
     }
 
@@ -2229,12 +2247,13 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
         // Use touch price. it doesnt matter if we are wrong as this is not used for decision making
         uint256 estimatedWant =  priceCheck(comp, address(want),_claimableComp.add(currentComp));
         uint256 conservativeWant = estimatedWant.mul(9).div(10); //10% pessimist
+        uint256 ironBankDebt = ironBankOutstandingDebtStored();
 
-        return want.balanceOf(address(this)).add(deposits).add(conservativeWant).sub(borrows);
+        return want.balanceOf(address(this)).add(deposits).add(conservativeWant).sub(borrows).sub(ironBankDebt);
     }
 
     //predicts our profit at next report
-    function expectedReturn() public view returns (uint256) {
+    /*function expectedReturn() public view returns (uint256) {
         uint256 estimateAssets = estimatedTotalAssets();
 
         uint256 debt = vault.strategies(address(this)).totalDebt;
@@ -2243,7 +2262,7 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
         } else {
             return estimateAssets - debt;
         }
-    }
+    }*/
 
     /*
      * Provide a signal to the keeper that `tend()` should be called.
@@ -2259,6 +2278,14 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
         }
 
         if (getblocksUntilLiquidation() <= blocksToLiquidationDangerZone) {
+            return true;
+        }
+
+
+        uint256 wantGasCost = priceCheck(weth, address(want), gasCost);
+        //test if we want to change iron bank position
+        (,uint256 _amount)= internalCreditOfficer();
+        if(profitFactor.mul(wantGasCost) < _amount){
             return true;
         }
     }
@@ -2315,19 +2342,155 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
         address[] memory path;
         if(start == weth){
             path = new address[](2);
-            path[0] = weth; 
+            path[0] = weth;
             path[1] = end;
         }else{
-            path = new address[](2);
-            path[0] = start; 
-            path[1] = weth; 
-            path[1] = end;
+            path = new address[](3);
+            path[0] = start;
+            path[1] = weth;
+            path[2] = end;
         }
- 
+
         uint256[] memory amounts = IUni(uniswapRouter).getAmountsOut(_amount, path);
 
         return amounts[amounts.length - 1];
     }
+
+    /*****************
+     * Iron Bank
+     ******************/
+
+    //simple logic. do we get more apr than iron bank charges?
+    //if so, is that still true with increased pos?
+    //if not, should be reduce?
+    //made harder because we can't assume iron bank debt curve. So need to increment
+    function internalCreditOfficer() public view returns (bool borrowMore, uint256 amount) {
+
+        //our current supply rate.
+        //we only calculate once because it is expensive
+        uint256 currentSR = currentSupplyRate();
+        //iron bank borrow rate
+        uint256 ironBankBR = ironBankBorrowRate(0, true);
+
+        uint256 outstandingDebt = ironBankOutstandingDebtStored();
+
+        //we have internal credit limit. it is function on our own assets invested
+        //this means we can always repay our debt from our capital
+        uint256 maxCreditDesired = vault.strategies(address(this)).totalDebt.mul(maxIronBankLeverage);
+        uint256 remainingCredit = ironBankRemainingCredit();
+
+         //minIncrement must be > 0
+        if(maxCreditDesired <= step){
+            return (false, 0);
+        }
+
+        //we move in 10% increments
+        uint256 minIncrement = maxCreditDesired.div(step);
+
+        //we start at 1 to save some gas
+        uint256 increment = 1;
+
+        //repay debt if iron bank wants it back
+        if(remainingCredit < outstandingDebt){
+            borrowMore = false;
+            amount = outstandingDebt - remainingCredit;
+        }
+        // if we have too much debt we return
+        else if(maxCreditDesired < outstandingDebt){
+            borrowMore = false;
+            amount = outstandingDebt - maxCreditDesired;
+        }
+        //if sr is > iron bank we borrow more. else return
+        else if(currentSR > ironBankBR){            
+            remainingCredit = Math.min(maxCreditDesired - outstandingDebt, remainingCredit);
+
+            while(minIncrement.mul(increment) <= remainingCredit){
+                ironBankBR = ironBankBorrowRate(minIncrement.mul(increment), false);
+                if(currentSR <= ironBankBR){
+                    break;
+                }
+
+                increment++;
+            }
+            borrowMore = true;
+            amount = minIncrement.mul(increment-1);
+
+        }else{
+
+            while(minIncrement.mul(increment) <= outstandingDebt){
+                ironBankBR = ironBankBorrowRate(minIncrement.mul(increment), false);
+
+                //we do increment before the if statement here
+                increment++;
+                if(currentSR > ironBankBR){
+                    break;
+                }
+
+            }
+            borrowMore = false;
+
+            //special case to repay all
+            if(increment == 1){
+                amount = outstandingDebt;
+            }else{
+                amount = minIncrement.mul(increment - 1);
+            }
+
+        }
+
+        //we dont play with dust:
+        if (amount < debtThreshold) { 
+            amount = 0;
+        }
+     }
+
+     function ironBankRemainingCredit() public view returns (uint256 available) {
+
+        (, uint256 liquidity,) = ironBank.getAccountLiquidity(address(this));
+        if(liquidity == 0){
+            return 0;
+        }
+
+        uint256 underlyingPrice = ironBank.oracle().getUnderlyingPrice(address(ironBankToken));
+
+        if(underlyingPrice == 0){
+            return 0;
+        }
+        uint256 liquidityAvailable = want.balanceOf(address(ironBankToken));
+
+        available = liquidity.mul(1e18).div(underlyingPrice);
+        available = Math.min(available, liquidityAvailable);
+     }
+
+     function ironBankOutstandingDebtStored() public view returns (uint256 available) {
+
+        return ironBankToken.borrowBalanceStored(address(this));
+     }
+
+
+     function ironBankBorrowRate(uint256 amount, bool repay) public view returns (uint256) {
+        uint256 cashPrior = want.balanceOf(address(ironBankToken));
+
+        uint256 borrows = ironBankToken.totalBorrows();
+        uint256 reserves = ironBankToken.totalReserves();
+
+        InterestRateModel model = ironBankToken.interestRateModel();
+        uint256 cashChange;
+        uint256 borrowChange;
+        if(repay){
+            cashChange = cashPrior.add(amount);
+            borrowChange = borrows.sub(amount);
+        }else{
+            cashChange = cashPrior.sub(amount);
+            borrowChange = borrows.add(amount);
+        }
+
+        uint256 borrowRate = model.getBorrowRate(cashChange, borrowChange, reserves);
+
+        return borrowRate;
+    }
+
+
 
     /*****************
      * Public non-base function
@@ -2365,6 +2528,16 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
     // This function makes a prediction on how much comp is accrued
     // It is not 100% accurate as it uses current balances in Compound to predict into the past
     function predictCompAccrued() public view returns (uint256) {
+
+
+        //last time we ran harvest
+        uint256 lastReport = vault.strategies(address(this)).lastReport;
+        uint256 blocksSinceLast= (block.timestamp.sub(lastReport)).div(13); //roughly 13 seconds per block
+
+        return blocksSinceLast.mul(compBlockShare());
+    }
+
+    function compBlockShare() public view returns (uint256){
         (uint256 deposits, uint256 borrows) = getCurrentPosition();
         if (deposits == 0) {
             return 0; // should be impossible to have 0 balance and positive comp accrued
@@ -2383,20 +2556,52 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
         if(totalSupply > 0){
             blockShareSupply = deposits.mul(distributionPerBlock).div(totalSupply);
         }
-        
+
         uint256 blockShareBorrow = 0;
         if(totalBorrow > 0){
             blockShareBorrow = borrows.mul(distributionPerBlock).div(totalBorrow);
         }
-        
+
         //how much we expect to earn per block
-        uint256 blockShare = blockShareSupply.add(blockShareBorrow);
+        return blockShareSupply.add(blockShareBorrow);
+    }
 
-        //last time we ran harvest
-        uint256 lastReport = vault.strategies(address(this)).lastReport;
-        uint256 blocksSinceLast= (block.timestamp.sub(lastReport)).div(13); //roughly 13 seconds per block
+    function currentSupplyRate() public view returns (uint256 supply) {
+        //first let's do standard borrow and lend
+        uint256 cashPrior = want.balanceOf(address(cToken));
 
-        return blocksSinceLast.mul(blockShare);
+        uint256 totalBorrows = cToken.totalBorrows();
+        uint256 reserves = cToken.totalReserves();
+
+        uint256 reserverFactor = cToken.reserveFactorMantissa();
+        InterestRateModel model = cToken.interestRateModel();
+
+        //the supply rate is derived from the borrow rate, reserve factor and the amount of total borrows.
+        uint256 supplyRate = model.getSupplyRate(cashPrior, totalBorrows, reserves, reserverFactor);
+        uint256 borrowRate = model.getBorrowRate(cashPrior, totalBorrows, reserves);
+
+
+
+        uint256 compPerBlock = compBlockShare();
+        uint256 estimatedWant =  priceCheck(comp, address(want),compPerBlock);
+        uint256 compRate;
+        if(estimatedWant != 0){
+            compRate = estimatedWant.mul(9).div(10); //10% pessimist
+            //now need to scale. compPerBlock is out total.
+            compRate = compRate.mul(1e18).div(netBalanceLent());
+
+        }
+
+        //our supply rate is:
+        //comp + lend - borrow
+        supplyRate = compRate.add(supplyRate);
+        if(supplyRate > borrowRate){
+            supply = supplyRate.sub(borrowRate);
+        }else{
+            supply = 0;
+        }
+
+
     }
 
     //Returns the current position
@@ -2449,7 +2654,7 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
             //no position to harvest
             //but we may have some debt to return
             //it is too expensive to free more debt in this method so we do it in adjust position
-            _debtPayment = Math.min(wantBalance, _debtOutstanding); 
+            _debtPayment = Math.min(wantBalance, _debtOutstanding);
             return (_profit, _loss, _debtPayment);
         }
         (uint256 deposits, uint256 borrows) = getLivePosition();
@@ -2464,14 +2669,15 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
         uint256 investedBalance = deposits.sub(borrows);
         uint256 balance = investedBalance.add(wantBalance);
 
-        uint256 debt = vault.strategies(address(this)).totalDebt;
+        uint256 ibDebt = ironBankToken.borrowBalanceCurrent(address(this));
+        uint256 debt = vault.strategies(address(this)).totalDebt.add(ibDebt);
 
         //Balance - Total Debt is profit
         if (balance > debt) {
             _profit = balance - debt;
 
             if (wantBalance < _profit) {
-                //all reserve is profit                
+                //all reserve is profit
                 _profit = wantBalance;
             } else if (wantBalance > _profit.add(_debtOutstanding)){
                 _debtPayment = _debtOutstanding;
@@ -2498,20 +2704,34 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
             return;
         }
 
+        //start off by borrowing or returning:
+        (bool borrowMore, uint256 amount) = internalCreditOfficer();
+
+        //if repaying we use debOutstanding
+        if(!borrowMore){
+            _debtOutstanding = amount;
+        }else if(amount > 0){
+            //borrow the amount we want
+            ironBankToken.borrow(amount);
+        }
+
         //we are spending all our cash unless we have debt outstanding
         uint256 _wantBal = want.balanceOf(address(this));
+        
         if(_wantBal < _debtOutstanding){
             //this is graceful withdrawal. dont use backup
             //we use more than 1 because withdrawunderlying causes problems with 1 token due to different decimals
-            if(cToken.balanceOf(address(this)) > 1){ 
-                _withdrawSome(_debtOutstanding - _wantBal, false);
+            if(cToken.balanceOf(address(this)) > 1){
+                _withdrawSome(_debtOutstanding - _wantBal);
             }
-
+            if(!borrowMore){
+                ironBankToken.repayBorrow(Math.min(_debtOutstanding, want.balanceOf(address(this))));
+            }
             return;
         }
-        
+
         (uint256 position, bool deficit) = _calculateDesiredPosition(_wantBal - _debtOutstanding, true);
-        
+
         //if we are below minimun want change it is not worth doing
         //need to be careful in case this pushes to liquidation
         if (position > minWant) {
@@ -2535,30 +2755,30 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
 
             }
         }
+
+       // if(!borrowMore){
+            //now we have debt outstanding lent without being needed:
+        //    cToken.redeemUnderlying(_debtOutstanding);
+         //   ironBankToken.repayBorrow(Math.min(_debtOutstanding, want.balanceOf(address(this))));
+        //}
     }
 
     /*************
      * Very important function
-     * Input: amount we want to withdraw and whether we are happy to pay extra for Aave.
+     * Input: amount we want to withdraw.
      *       cannot be more than we have
      * Returns amount we were able to withdraw. notall if user has some balance left
      *
      * Deleverage position -> redeem our cTokens
      ******************** */
-    function _withdrawSome(uint256 _amount, bool _useBackup) internal returns (bool notAll) {
+    function _withdrawSome(uint256 _amount) internal returns (bool notAll) {
         (uint256 position, bool deficit) = _calculateDesiredPosition(_amount, false);
 
         //If there is no deficit we dont need to adjust position
         if (deficit) {
-            //we do a flash loan to give us a big gap. from here on out it is cheaper to use normal deleverage. Use Aave for extremely large loans
+            //we do a flash loan to give us a big gap. from here on out it is cheaper to use normal deleverage.
             if (DyDxActive) {
                 position = position.sub(doDyDxFlashLoan(deficit, position));
-            }
-
-            // Will decrease number of interactions using aave as backup
-            // because of fee we only use in emergency
-            if (position > 0 && AaveActive && _useBackup) {
-                position = position.sub(doAaveFlashLoan(deficit, position));
             }
 
             uint8 i = 0;
@@ -2622,7 +2842,7 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
         uint256 desiredSupply = 0;
         if (dep) {
             desiredSupply = unwoundDeposit.add(balance);
-        } else { 
+        } else {
             if(balance > unwoundDeposit) balance = unwoundDeposit;
             desiredSupply = unwoundDeposit.sub(balance);
         }
@@ -2662,14 +2882,14 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
             (uint256 deposits, uint256 borrows) = getLivePosition();
 
             //1 token causes rounding error with withdrawUnderlying
-            if(cToken.balanceOf(address(this)) > 1){ 
-                _withdrawSome(deposits.sub(borrows), true);
+            if(cToken.balanceOf(address(this)) > 1){
+                _withdrawSome(deposits.sub(borrows));
             }
 
             _amountFreed = Math.min(_amountNeeded, want.balanceOf(address(this)));
         } else {
             if (_balance < _amountNeeded) {
-                _withdrawSome(_amountNeeded.sub(_balance), true);
+                _withdrawSome(_amountNeeded.sub(_balance));
 
                 //overflow error if we return more than asked for
                 _amountFreed = Math.min(_amountNeeded, want.balanceOf(address(this)));
@@ -2708,12 +2928,19 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
             uint256 _loss,
             uint256 _debtPayment){
 
+        //we pay off idebt first
+        uint256 ibDebt = ironBankToken.borrowBalanceCurrent(address(this));
+        _withdrawSome(ibDebt);
+        uint256 available  = Math.min(ibDebt, want.balanceOf(address(this)));
+        cToken.repayBorrow(available);
+
+
         //we dont use getCurrentPosition() because it won't be exact
         (uint256 deposits, uint256 borrows) = getLivePosition();
 
         //1 token causes rounding error with withdrawUnderlying
-        if(cToken.balanceOf(address(this)) > 1){ 
-            _withdrawSome(deposits.sub(borrows), true);
+        if(cToken.balanceOf(address(this)) > 1){
+            _withdrawSome(deposits.sub(borrows));
         }
         _debtPayment = want.balanceOf(address(this));
         if(_debtOutstanding > _debtPayment){
@@ -2729,11 +2956,11 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
     //if we can't deleverage in one go set collateralFactor to 0 and call harvest multiple times until delevered
     function prepareMigration(address _newStrategy) internal override {
         (uint256 deposits, uint256 borrows) = getLivePosition();
-        _withdrawSome(deposits.sub(borrows), false);
+        _withdrawSome(deposits.sub(borrows));
 
         (, , uint256 borrowBalance, ) = cToken.getAccountSnapshot(address(this));
 
-        require(borrowBalance == 0, "DELEVERAGE_FIRST");
+        require(borrowBalance == 0); //, "DELEVERAGE_FIRST"
 
         want.safeTransfer(_newStrategy, want.balanceOf(address(this)));
 
@@ -2764,7 +2991,7 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
             amount = _normalLeverage(max, lent, borrowed, collateralFactorMantissa);
         }
 
-        emit Leverage(max, amount, deficit, address(0));
+        //emit Leverage(max, amount, deficit, address(0));
     }
 
     //maxDeleverage is how much we want to reduce by
@@ -2815,31 +3042,6 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
         cToken.mint(want.balanceOf(address(this)));
     }
 
-    //called by flash loan
-    function _loanLogic(
-        bool deficit,
-        uint256 amount,
-        uint256 repayAmount
-    ) internal {
-        uint256 bal = want.balanceOf(address(this));
-        require(bal >= amount, "FLASH_FAILED"); // to stop malicious calls
-
-        //if in deficit we repay amount and then withdraw
-        if (deficit) {
-            cToken.repayBorrow(amount);
-
-            //if we are withdrawing we take more to cover fee
-            cToken.redeemUnderlying(repayAmount);
-        } else {
-            //check if this failed incase we borrow into liquidation
-            require(cToken.mint(bal) == 0, "mint error");
-            //borrow more to cover fee
-            // fee is so low for dydx that it does not effect our liquidation risk.
-            //DONT USE FOR AAVE
-            cToken.borrow(repayAmount);
-        }
-    }
-
     function protectedTokens() internal override view returns (address[] memory) {
 
         //want is protected automatically
@@ -2858,7 +3060,7 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
     function doDyDxFlashLoan(bool deficit, uint256 amountDesired) internal returns (uint256) {
         uint256 amount = amountDesired;
         ISoloMargin solo = ISoloMargin(SOLO);
-        
+
         // Not enough want in DyDx. So we take all we can
         uint256 amountInSolo = want.balanceOf(SOLO);
 
@@ -2887,7 +3089,7 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
 
         solo.operate(accountInfos, operations);
 
-        emit Leverage(amountDesired, amount, deficit, SOLO);
+        //emit Leverage(amountDesired, amount, deficit, SOLO);
 
         return amount;
     }
@@ -2908,65 +3110,27 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
         bytes memory data
     ) public override {
         (bool deficit, uint256 amount, uint256 repayAmount) = abi.decode(data, (bool, uint256, uint256));
-        require(msg.sender == SOLO, "NOT_SOLO");
+        require(msg.sender == SOLO); //, "NOT_SOLO"
 
-        _loanLogic(deficit, amount, repayAmount);
-       
-    }
-    
-    bool internal awaitingFlash = false;
+        uint256 bal = want.balanceOf(address(this));
+        require(bal >= amount); //, "FLASH_FAILED" to stop malicious calls
 
-    function doAaveFlashLoan(bool deficit, uint256 _flashBackUpAmount) internal returns (uint256 amount) {
-        //we do not want to do aave flash loans for leveraging up. Fee could put us into liquidation
-        if (!deficit) {
-            return _flashBackUpAmount;
-        }
+        //if in deficit we repay amount and then withdraw
+        if (deficit) {
+            cToken.repayBorrow(amount);
 
-        ILendingPool lendingPool = ILendingPool(addressesProvider.getLendingPool());
-
-        uint256 availableLiquidity = want.balanceOf(address(0x3dfd23A6c5E8BbcFc9581d2E864a68feb6a076d3));
-
-        if (availableLiquidity < _flashBackUpAmount) {
-            amount = availableLiquidity;
+            //if we are withdrawing we take more to cover fee
+            cToken.redeemUnderlying(repayAmount);
         } else {
-            amount = _flashBackUpAmount;
+            //check if this failed incase we borrow into liquidation
+            require(cToken.mint(bal) == 0); //dev: "mint error"
+            //borrow more to cover fee
+            // fee is so low for dydx that it does not effect our liquidation risk.
+            //DONT USE FOR AAVE
+            cToken.borrow(repayAmount);
         }
 
-        bytes memory data = abi.encode(deficit, amount);
-
-        //anyone can call aave flash loan to us. (for some reason. grrr)
-        awaitingFlash = true;
-
-
-        lendingPool.flashLoan(address(this), address(want), amount, data);
-        
-        awaitingFlash = false;
-
-        emit Leverage(_flashBackUpAmount, amount, deficit, AAVE_LENDING);
     }
 
-    //Aave calls this function after doing flash loan
-    function executeOperation(
-        address _reserve,
-        uint256 _amount,
-        uint256 _fee,
-        bytes calldata _params
-    ) external {
-        (bool deficit, uint256 amount) = abi.decode(_params, (bool, uint256));
-        require(msg.sender == addressesProvider.getLendingPool(), "NOT_AAVE");
-        require(awaitingFlash, "Malicious");
-
-        _loanLogic(deficit, amount, amount.add(_fee));
-
-        // return the flash loan plus Aave's flash loan fee back to the lending pool
-        uint256 totalDebt = _amount.add(_fee);
-
-        address core = addressesProvider.getLendingPoolCore();
-        IERC20(_reserve).safeTransfer(core, totalDebt);
-    }
-
-    modifier management(){
-        require(msg.sender == governance() || msg.sender == strategist, "!management");
-        _;
-    }
 }
+

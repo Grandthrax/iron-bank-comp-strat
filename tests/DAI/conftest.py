@@ -133,55 +133,14 @@ def want_generic(interface):
     print('Enter want address')
     yieldinterface.ERC20(input())
 
-@pytest.fixture
-def live_vault(Vault):
-    yield Vault.at('0x9B142C2CDAb89941E9dcd0B6C1cf6dEa378A8D7C')
 
 @pytest.fixture
 def live_strategy(Strategy):
-    yield YearnDaiCompStratV2.at('0x4C6e9d7E5d69429100Fcc8afB25Ea980065e2773')
+    yield Strategy.at('0x2F082A8f4A41FB81AC3cfb39Cf41Ca47378d692E')
 
 @pytest.fixture
-def live_strategy_dai2(Strategy):
-    yield Strategy.at('0x2D1b8C783646e146312D317E550EF80EC1Cb08C3')
-
-
-@pytest.fixture
-def live_strategy_usdc3(Strategy):
-    yield Strategy.at('0x31576ac682ee0A15c48C4baC24c567f27CA1b7cD')
-
-@pytest.fixture
-def live_strategy_usdc4(Strategy):
-    yield Strategy.at('0xC10363fa66d9c12724e56f269D0438B26581b2eA')
-
-@pytest.fixture
-def live_vault_usdc3(Vault):
-    yield Vault.at('0xe2F6b9773BF3A015E2aA70741Bde1498bdB9425b')
-
-
-@pytest.fixture
-def live_strategy_dai3(Strategy):
-    yield Strategy.at('0x5A9D49679319FCF3AcFe5559602Dbf31A221BaD6')
-
-@pytest.fixture
-def live_strategy_dai4(Strategy):
-    yield Strategy.at('0x001F751cdfee02e2F0714831bE2f8384db0F71a2')
-
-@pytest.fixture
-def live_vault_dai3(Vault):
-    yield Vault.at('0xBFa4D8AA6d8a379aBFe7793399D3DdaCC5bBECBB')
-
-@pytest.fixture
-def live_vault_dai2(Vault):
-    yield Vault.at('0x1b048bA60b02f36a7b48754f4edf7E1d9729eBc9')
-
-@pytest.fixture
-def live_vault_weth(Vault):
-    yield Vault.at('0xf20731f26e98516dd83bb645dd757d33826a37b5')
-
-@pytest.fixture
-def live_strategy_weth(YearnWethCreamStratV2):
-    yield YearnDaiCompStratV2.at('0x97785a81b3505ea9026b2affa709dfd0c9ef24f6')
+def live_vault_dai(Vault):
+    yield Vault.at('0x07dbC20B84fF63F3cc542F6A22E5a71cbA5670A4')
 
 @pytest.fixture
 def dai(interface):

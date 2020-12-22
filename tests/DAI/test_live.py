@@ -75,12 +75,13 @@ def test_migration(live_vault_dai3,live_strategy_dai3,live_strategy_usdc3, live_
     #aave.flashLoan(live_strat, dai, 100, calldata, {'from': whale})
 
 
-def test_add_strat(live_vault_dai3, Contract,usdc, web3, accounts, chain, cdai, comp, dai, live_strategy_usdc3,live_vault_usdc3, live_strategy_dai3,live_gov, currency, whale,samdev):
+def test_add_strat(live_vault_dai, Contract,usdc, web3, accounts, chain, cdai, comp, dai, live_strategy, currency, whale,samdev,creamdev, ibdai,ironbank):
     strategist = samdev
-    strategy = live_strategy_usdc3
-    vault = live_vault_usdc3
-    currency = usdc
-    gov = live_gov
+    strategy = live_strategy
+    ironbank._setCreditLimit(strategy, 1_000_000 *1e18, {'from': creamdev})
+    vault = live_vault_dai
+    currency = dai
+    gov = samdev
 
     stateOfStrat(strategy, currency, comp)
     genericStateOfVault(vault, currency)
@@ -93,12 +94,13 @@ def test_add_strat(live_vault_dai3, Contract,usdc, web3, accounts, chain, cdai, 
         {"from": gov}
     )
 
-   #amount = Wei('50000 ether')
+    amount = Wei('1000 ether')
     #print(dai.balanceOf(whale)/1e18)
-    #dai.approve(vault, amount, {'from': whale})
-    #vault.deposit(amount, {'from': whale})  
+    dai.approve(vault, amount, {'from': whale})
+    vault.deposit(amount, {'from': whale})  
     chain.mine(1)
 
+    strategy.harvest({'from': strategist})
     strategy.harvest({'from': strategist})
 
     stateOfStrat(strategy, currency, comp)

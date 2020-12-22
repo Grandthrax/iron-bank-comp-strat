@@ -47,6 +47,7 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
     //Operating variables
     uint256 private collateralTarget = 0.73 ether; // 73%
     uint256 private blocksToLiquidationDangerZone = 46500; // 7 days =  60*60*24*7/13
+    uint256 public step = 10;
 
     uint256 private minWant = 0; //Only lend if we have enough want to be worth it. Can be set to non-zero
     uint256 public minCompToSell = 0.1 ether; //used both as the threshold to sell but also as a trigger for harvest
@@ -99,8 +100,8 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
     /*
      * Control Functions
      */
-    function setDyDx(bool _dydx) external onlyAuthorized {
-        DyDxActive = _dydx;
+    function setIsDyDxActive(bool _isActive) external onlyAuthorized {
+        DyDxActive = _isActive;
     }
 
     function setMinCompToSell(uint256 _minCompToSell) external onlyAuthorized {
@@ -109,6 +110,10 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
 
     function setIronBankLeverage(uint256 _multiple) external onlyGovernance {
         maxIronBankLeverage = _multiple;
+    }
+
+    function setStep(uint256 _step) external onlyGovernance {
+        step = _step;
     }
 
     function setMinWant(uint256 _minWant) external onlyAuthorized {
@@ -192,6 +197,10 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
      * NOTE: this call and `tendTrigger` should never return `true` at the same time.
      */
     function harvestTrigger(uint256 gasCost) public override view returns (bool) {
+        StrategyParams memory params = vault.strategies(address(this));
+        // Should not trigger if strategy is not activated
+        if (params.activation == 0) return false;
+
         uint256 wantGasCost = priceCheck(weth, address(want), gasCost);
         uint256 compGasCost = priceCheck(weth, comp, gasCost);
 
@@ -205,10 +214,6 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
             }
         }
 
-        StrategyParams memory params = vault.strategies(address(this));
-
-        // Should not trigger if strategy is not activated
-        if (params.activation == 0) return false;
 
         // Should trigger if hadn't been called in a while
         if (block.timestamp.sub(params.lastReport) >= minReportDelay) return true;
@@ -239,10 +244,10 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
             path[0] = weth;
             path[1] = end;
         }else{
-            path = new address[](2);
+            path = new address[](3);
             path[0] = start;
             path[1] = weth;
-            path[1] = end;
+            path[2] = end;
         }
 
         uint256[] memory amounts = IUni(uniswapRouter).getAmountsOut(_amount, path);
@@ -274,12 +279,12 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
         uint256 remainingCredit = ironBankRemainingCredit();
 
         //minIncrement must be > 0
-        if(maxCreditDesired < 11){
+        if(maxCreditDesired <= step){
             return (false, 0);
         }
 
         //we move in 10% increments
-        uint256 minIncrement = maxCreditDesired.div(10);
+        uint256 minIncrement = maxCreditDesired.div(step);
 
         //we start at 1 to save some gas
         uint256 increment = 1;

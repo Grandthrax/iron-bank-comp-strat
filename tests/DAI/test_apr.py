@@ -23,18 +23,20 @@ def test_sweep(web3,strategy, dai,cdai, gov, comp):
 
     
 
-def test_apr_dai(web3, chain, comp, vault, enormousrunningstrategy, whale, gov, dai, strategist):
-    enormousrunningstrategy.setProfitFactor(1, {"from": strategist} )
-    assert(enormousrunningstrategy.profitFactor() == 1)
+def test_apr_dai(web3, chain, comp, vault, smallrunningstrategy, whale, gov, dai, strategist):
+    strategy = smallrunningstrategy
+    strategy.setProfitFactor(1, {"from": strategist} )
+    assert(strategy.profitFactor() == 1)
+    print(strategy.ironBankOutstandingDebtStored())
 
-    enormousrunningstrategy.setMinCompToSell(1, {"from": gov})
-    enormousrunningstrategy.setMinWant(0, {"from": gov})
-    assert enormousrunningstrategy.minCompToSell() == 1
+    strategy.setMinCompToSell(1, {"from": gov})
+    strategy.setMinWant(0, {"from": gov})
+    assert strategy.minCompToSell() == 1
 
     startingBalance = vault.totalAssets()
 
-    stateOfStrat(enormousrunningstrategy, dai, comp)
-    stateOfVault(vault, enormousrunningstrategy)
+    stateOfStrat(strategy, dai, comp)
+    stateOfVault(vault, strategy)
 
     for i in range(6):
         
@@ -42,12 +44,13 @@ def test_apr_dai(web3, chain, comp, vault, enormousrunningstrategy, whale, gov, 
         print(f'\n----wait {waitBlock} blocks----')
         wait(waitBlock, chain)
         
-        harvest(enormousrunningstrategy, strategist, vault)
+        #harvest(strategy, strategist, vault)
+        strategy.harvest({'from': strategist})
         #stateOfStrat(enormousrunningstrategy, dai, comp)
         #stateOfVault(vault, enormousrunningstrategy)
 
         profit = (vault.totalAssets() - startingBalance).to('ether')
-        strState = vault.strategies(enormousrunningstrategy)
+        strState = vault.strategies(strategy)
         totalReturns = strState[6]
         totaleth = totalReturns.to('ether')
         print(f'Real Profit: {profit:.5f}')

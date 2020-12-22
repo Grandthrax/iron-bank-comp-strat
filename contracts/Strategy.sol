@@ -13,8 +13,8 @@ import "@openzeppelinV3/contracts/math/Math.sol";
 import "@openzeppelinV3/contracts/utils/Address.sol";
 import "@openzeppelinV3/contracts/token/ERC20/SafeERC20.sol";
 
-import "./Interfaces/Compound/CErc20I.sol";
-import "./Interfaces/Compound/ComptrollerI.sol";
+import "./Interfaces/Compound/SCErc20I.sol";
+import "./Interfaces/Compound/SComptrollerI.sol";
 import "./Interfaces/UniswapInterfaces/IUni.sol";
 
 
@@ -30,16 +30,16 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
     address private SOLO;
 
     // Comptroller address for compound.finance
-    ComptrollerI private compound;
+    SComptrollerI private compound;
 
     //IRON BANK
-    ComptrollerI private ironBank;
-    CErc20I private ironBankToken;
+    SComptrollerI private ironBank;
+    SCErc20I private ironBankToken;
     uint256 public maxIronBankLeverage = 4; //max leverage we will take from iron bank
 
     //Only three tokens we use
     address private comp;
-    CErc20I private cToken;
+    SCErc20I private cToken;
 
     address private uniswapRouter;
     address private weth;
@@ -49,7 +49,7 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
     uint256 private blocksToLiquidationDangerZone = 46500; // 7 days =  60*60*24*7/13
 
     uint256 private minWant = 0; //Only lend if we have enough want to be worth it. Can be set to non-zero
-    uint256 private minCompToSell = 0.1 ether; //used both as the threshold to sell but also as a trigger for harvest
+    uint256 public minCompToSell = 0.1 ether; //used both as the threshold to sell but also as a trigger for harvest
 
     //To deactivate flash loan provider if needed
     bool private DyDxActive = true;
@@ -60,9 +60,9 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
         address _vault,
         address _cToken,
         address _solo,
-        ComptrollerI _compound,
-        ComptrollerI _ironBank,
-        CErc20I _ironBankToken,
+        SComptrollerI _compound,
+        SComptrollerI _ironBank,
+        SCErc20I _ironBankToken,
         address _comp,
         address _uniswapRouter,
         address _weth
@@ -76,7 +76,7 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
         uniswapRouter = _uniswapRouter;
         weth = _weth;
 
-        cToken = CErc20I(address(_cToken));
+        cToken = SCErc20I(address(_cToken));
 
         //pre-set approvals
         IERC20(_comp).safeApprove(_uniswapRouter, uint256(-1));
@@ -87,6 +87,7 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
         // You can set these parameters on deployment to whatever you want
         minReportDelay = 86400; // once per 24 hours
         profitFactor = 100; // multiple before triggering harvest
+        debtThreshold = 50*1e18; // don't borrow borrowing if less than debtThreshold
 
         dyDxMarketId = _getMarketIdFromTokenAddress(_solo, address(want));
     }
@@ -104,6 +105,10 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
 
     function setMinCompToSell(uint256 _minCompToSell) external onlyAuthorized {
         minCompToSell = _minCompToSell;
+    }
+
+    function setIronBankLeverage(uint256 _multiple) external onlyGovernance {
+        maxIronBankLeverage = _multiple;
     }
 
     function setMinWant(uint256 _minWant) external onlyAuthorized {
@@ -136,12 +141,13 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
         // Use touch price. it doesnt matter if we are wrong as this is not used for decision making
         uint256 estimatedWant =  priceCheck(comp, address(want),_claimableComp.add(currentComp));
         uint256 conservativeWant = estimatedWant.mul(9).div(10); //10% pessimist
+        uint256 ironBankDebt = ironBankOutstandingDebtStored();
 
-        return want.balanceOf(address(this)).add(deposits).add(conservativeWant).sub(borrows);
+        return want.balanceOf(address(this)).add(deposits).add(conservativeWant).sub(borrows).sub(ironBankDebt);
     }
 
     //predicts our profit at next report
-    function expectedReturn() public view returns (uint256) {
+    /*function expectedReturn() public view returns (uint256) {
         uint256 estimateAssets = estimatedTotalAssets();
 
         uint256 debt = vault.strategies(address(this)).totalDebt;
@@ -150,7 +156,7 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
         } else {
             return estimateAssets - debt;
         }
-    }
+    }*/
 
     /*
      * Provide a signal to the keeper that `tend()` should be called.
@@ -253,14 +259,14 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
         uint256 ironBankBR = ironBankBorrowRate(0, true);
 
         uint256 outstandingDebt = ironBankOutstandingDebtStored();
-        uint256 remainingCredit = ironBankRemainingCredit();
+
         //we have internal credit limit. it is function on our own assets invested
         //this means we can always repay our debt from our capital
         uint256 maxCreditDesired = vault.strategies(address(this)).totalDebt.mul(maxIronBankLeverage);
-        remainingCredit = Math.min(maxCreditDesired, remainingCredit);
+        uint256 remainingCredit = ironBankRemainingCredit();
 
         //minIncrement must be > 0
-        if(remainingCredit < 11){
+        if(maxCreditDesired < 11){
             return (false, 0);
         }
 
@@ -270,8 +276,20 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
         //we start at 1 to save some gas
         uint256 increment = 1;
 
+        //repay debt if iron bank wants it back
+        if(remainingCredit < outstandingDebt){
+            borrowMore = false;
+            amount = outstandingDebt - remainingCredit;
+        }
+        // if we have too much debt we return
+        else if(maxCreditDesired < outstandingDebt){
+            borrowMore = false;
+            amount = outstandingDebt - maxCreditDesired;
+        }
         //if sr is > iron bank we borrow more. else return
-        if(currentSR > ironBankBR){
+        else if(currentSR > ironBankBR){            
+            remainingCredit = Math.min(maxCreditDesired - outstandingDebt, remainingCredit);
+
             while(minIncrement.mul(increment) <= remainingCredit){
                 ironBankBR = ironBankBorrowRate(minIncrement.mul(increment), false);
                 if(currentSR <= ironBankBR){
@@ -304,6 +322,11 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
                 amount = minIncrement.mul(increment - 1);
             }
 
+        }
+
+        //we dont play with dust:
+        if (amount < debtThreshold) { 
+            amount = 0;
         }
      }
 
@@ -580,13 +603,16 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
 
         //we are spending all our cash unless we have debt outstanding
         uint256 _wantBal = want.balanceOf(address(this));
+        
         if(_wantBal < _debtOutstanding){
             //this is graceful withdrawal. dont use backup
             //we use more than 1 because withdrawunderlying causes problems with 1 token due to different decimals
             if(cToken.balanceOf(address(this)) > 1){
                 _withdrawSome(_debtOutstanding - _wantBal);
             }
-
+            if(!borrowMore){
+                ironBankToken.repayBorrow(Math.min(_debtOutstanding, want.balanceOf(address(this))));
+            }
             return;
         }
 
@@ -616,11 +642,11 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
             }
         }
 
-        if(!borrowMore){
+       // if(!borrowMore){
             //now we have debt outstanding lent without being needed:
-            cToken.redeemUnderlying(_debtOutstanding);
-
-        }
+        //    cToken.redeemUnderlying(_debtOutstanding);
+         //   ironBankToken.repayBorrow(Math.min(_debtOutstanding, want.balanceOf(address(this))));
+        //}
     }
 
     /*************
@@ -760,7 +786,7 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
     }
 
     function _claimComp() internal {
-        CTokenI[] memory tokens = new CTokenI[](1);
+        SCErc20I[] memory tokens = new SCErc20I[](1);
         tokens[0] = cToken;
 
         compound.claimComp(address(this), tokens);

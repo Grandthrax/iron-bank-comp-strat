@@ -55,12 +55,14 @@ def stateOfStrat(strategy, dai, comp):
     else:
         collat = borrows / deposits
     leverage = 1 / (1 - collat)
+
+    print('Iron Bank Debt:', strategy.ironBankOutstandingDebtStored()/  (10 ** decimals))  
     print(f'calculated collat: {collat:.5%}')
     storedCollat = strategy.storedCollateralisation()/  (10 ** decimals)
     print(f'stored collat: {storedCollat:.5%}') 
     print(f'leverage: {leverage:.5f}x')
     assert collat <= 0.75
-    print('Expected Profit:', strategy.expectedReturn()/  (10 ** decimals))
+   # print('Expected Profit:', (strategy.estimatedTotalAssets() -) /  (10 ** decimals))
     toLiquidation =  strategy.getblocksUntilLiquidation()
     print('Weeks to liquidation:', toLiquidation/44100)
 

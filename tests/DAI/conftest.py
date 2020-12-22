@@ -263,7 +263,15 @@ def isolation(fn_isolation):
 
 @pytest.fixture()
 def strategy(strategist,gov, keeper, vault,  Strategy, cdai):
-    strategy = strategist.deploy(Strategy,vault, cdai)
+    uinswap = '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D'
+    weth = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
+    ironcomptroller = '0xAB1c342C7bf5Ec5F02ADEA1c2270670bCa144CbB'
+    irontoken = '0x8e595470Ed749b85C6F7669de83EAe304C2ec68F'
+    comptroller = '0x3d9819210A31b4961b30EF54bE2aeD79B9c9Cd3B'
+    solo = '0x1E0447b19BB6EcFdAe1e4AE1694b0C3659614e4e'
+    comp = '0xc00e94Cb662C3520282E6f5717214004A7f26888'
+
+    strategy = strategist.deploy(Strategy,vault, cdai, solo, comptroller, ironcomptroller, irontoken, comp, uinswap, weth)
     strategy.setKeeper(keeper)
 
 
@@ -274,6 +282,27 @@ def strategy(strategist,gov, keeper, vault,  Strategy, cdai):
         {"from": gov},
     )
 
+    yield strategy
+
+@pytest.fixture()
+def smallrunningstrategy(gov, strategy,ironbank, dai,creamdev, ibdai, vault, whale):
+    dai.approve(ibdai, 2 ** 256 - 1, {'from': whale})
+    ironbank._setCreditLimit(strategy, 1_000_000 *1e18, {'from': creamdev})
+
+    ibdai.mint(100_1000, {'from': whale})
+
+    amount = Wei('1000 ether')
+    dai.approve(vault, amount, {'from': whale})
+    vault.deposit(amount, {'from': whale})    
+
+    strategy.harvest({'from': gov})
+    
+    #do it again with a smaller amount to replicate being this full for a while
+    amount = Wei('1000 ether')
+    dai.approve(vault, amount, {'from': whale})
+    vault.deposit(amount, {'from': whale})   
+    strategy.harvest({'from': gov})
+    
     yield strategy
 
 @pytest.fixture()

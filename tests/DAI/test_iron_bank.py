@@ -27,6 +27,7 @@ def test_internal_iron_bank(strategy, ironbank, ibdai, creamdev, web3, dai, comp
     strategy.harvest({'from': strategist})
     #stateOfStrat(strategy, dai, comp)
     #print(strategy.ironBankOutstandingDebtStored()/1e18)
+    stateOfStrat(strategy, dai, comp)
 
     deposits, borrows = strategy.getCurrentPosition()
 
@@ -118,8 +119,9 @@ def test_supply_rates(strategy, ironbank, ibdai, creamdev, web3, dai, comp, chai
     print(strategy.ironBankOutstandingDebtStored()/1e18)
     print(strategy.ironBankRemainingCredit()/1e18)
     
+    
     #first time we do not borrow anything because SR is 0
-    strategy.harvest({'from': strategist})
+    #strategy.harvest({'from': strategist})
     
     
 

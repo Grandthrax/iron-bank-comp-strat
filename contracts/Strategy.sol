@@ -174,6 +174,14 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
         if (getblocksUntilLiquidation() <= blocksToLiquidationDangerZone) {
             return true;
         }
+
+
+        uint256 wantGasCost = priceCheck(weth, address(want), gasCost);
+        //test if we want to change iron bank position
+        (,uint256 _amount)= internalCreditOfficer();
+        if(profitFactor.mul(wantGasCost) < _amount){
+            return true;
+        }
     }
 
     /*

@@ -48,15 +48,17 @@ def stateOfStrat(strategy, dai, comp):
     print('deposits:', deposits /  (10 ** decimals))
     realbalance = dai.balanceOf(strategy) + deposits - borrows
     print('total assets real:', realbalance/  (10 ** decimals))  
-
-    print('total assets estimate:', strategy.estimatedTotalAssets()/  (10 ** decimals))  
+    esassets =strategy.estimatedTotalAssets()
+    print('total assets estimate:', esassets/  (10 ** decimals))  
     if deposits == 0:
         collat = 0 
     else:
         collat = borrows / deposits
     leverage = 1 / (1 - collat)
 
-    print('Iron Bank Debt:', strategy.ironBankOutstandingDebtStored()/  (10 ** decimals))  
+
+    irondebt = strategy.ironBankOutstandingDebtStored()
+    print('Iron Bank Debt:', irondebt/  (10 ** decimals))  
     print(f'calculated collat: {collat:.5%}')
     storedCollat = strategy.storedCollateralisation()/  (10 ** decimals)
     print(f'stored collat: {storedCollat:.5%}') 
@@ -65,6 +67,14 @@ def stateOfStrat(strategy, dai, comp):
    # print('Expected Profit:', (strategy.estimatedTotalAssets() -) /  (10 ** decimals))
     toLiquidation =  strategy.getblocksUntilLiquidation()
     print('Weeks to liquidation:', toLiquidation/44100)
+    blocksPerYear = 2_300_000
+    ironapr = strategy.ironBankBorrowRate(0, True)*blocksPerYear/1e18
+
+    apr= strategy.currentSupplyRate()*blocksPerYear/1e18
+    leverage = (irondebt*(apr-ironapr) + esassets*apr)/esassets
+    print('Basic APR:', apr)
+    print('Full APR:',leverage)
+
 
 def genericStateOfStrat(strategy, currency, vault):
     decimals = currency.decimals()

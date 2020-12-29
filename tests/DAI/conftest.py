@@ -138,6 +138,8 @@ def want_generic(interface):
 def live_strategy(Strategy):
     yield Strategy.at('0x2F082A8f4A41FB81AC3cfb39Cf41Ca47378d692E')
 
+
+#0x1cfa165d8f6aa883fca19c58cf4e73ae2105b80ca9f0974abaf0d2bc50bf6ded <- new strat hash
 @pytest.fixture
 def live_vault_dai(Vault):
     yield Vault.at('0x07dbC20B84fF63F3cc542F6A22E5a71cbA5670A4')
@@ -220,8 +222,9 @@ def seededvault(vault, dai, rando):
 def isolation(fn_isolation):
     pass
 
+
 @pytest.fixture()
-def strategy(strategist,gov, keeper, vault,  Strategy, cdai):
+def strategy_base(strategist,gov, keeper, vault,  Strategy, cdai):
     uinswap = '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D'
     weth = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
     ironcomptroller = '0xAB1c342C7bf5Ec5F02ADEA1c2270670bCa144CbB'
@@ -232,8 +235,12 @@ def strategy(strategist,gov, keeper, vault,  Strategy, cdai):
 
     strategy = strategist.deploy(Strategy,vault, cdai, solo, comptroller, ironcomptroller, irontoken, comp, uinswap, weth)
     strategy.setKeeper(keeper)
+    yield strategy
 
-
+@pytest.fixture()
+def strategy(strategist,gov, keeper, vault,  strategy_base, cdai):
+    
+    strategy = strategy_base
     vault.addStrategy(
         strategy,
         2 ** 256 - 1,2 ** 256 - 1, 

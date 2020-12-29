@@ -97,34 +97,48 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
         return "IBLevComp";
     }
 
+    function _isAuthorized() internal view {
+        require(msg.sender == strategist || msg.sender == governance(), "!authorized");
+    }
+    function _isGov() internal view {
+        require(msg.sender == governance(), "!authorized");
+    }
+
     /*
      * Control Functions
      */
-    function setIsDyDxActive(bool _isActive) external onlyAuthorized {
+    function setIsDyDxActive(bool _isActive) external {
+        _isAuthorized();
         DyDxActive = _isActive;
     }
 
-    function setMinCompToSell(uint256 _minCompToSell) external onlyAuthorized {
+    function setMinCompToSell(uint256 _minCompToSell) external {
+        _isAuthorized();
         minCompToSell = _minCompToSell;
     }
 
-    function setIronBankLeverage(uint256 _multiple) external onlyGovernance {
+    function setIronBankLeverage(uint256 _multiple) external {
+        _isGov();
         maxIronBankLeverage = _multiple;
     }
 
-    function setStep(uint256 _step) external onlyGovernance {
+    function setStep(uint256 _step) external {
+        _isGov();
         step = _step;
     }
 
-    function setMinWant(uint256 _minWant) external onlyAuthorized {
+    function setMinWant(uint256 _minWant) external {
+        _isAuthorized();
         minWant = _minWant;
     }
 
-    function updateMarketId() external onlyAuthorized {
+    function updateMarketId() external {
+        _isAuthorized();
         dyDxMarketId = _getMarketIdFromTokenAddress(SOLO, address(want));
     }
 
-    function setCollateralTarget(uint256 _collateralTarget) external onlyAuthorized {
+    function setCollateralTarget(uint256 _collateralTarget) external {
+        _isAuthorized();
         (, uint256 collateralFactorMantissa, ) = compound.markets(address(cToken));
         require(collateralFactorMantissa > _collateralTarget); //, "!dangerous collateral"
         collateralTarget = _collateralTarget;
@@ -265,6 +279,28 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
     //made harder because we can't assume iron bank debt curve. So need to increment
     function internalCreditOfficer() public view returns (bool borrowMore, uint256 amount) {
 
+        //how much credit we have
+        (, uint256 liquidity, uint256 shortfall) = ironBank.getAccountLiquidity(address(this));
+        uint256 underlyingPrice = ironBank.oracle().getUnderlyingPrice(address(ironBankToken));
+        
+        if(underlyingPrice == 0){
+            return (false, 0);
+        }
+
+        liquidity = liquidity.mul(1e18).div(underlyingPrice);
+        shortfall = shortfall.mul(1e18).div(underlyingPrice);
+
+        //repay debt if iron bank wants its money back
+        if(shortfall > 0){
+            //note we only borrow 1 asset so can assume all our shortfall is from it
+            return(false, shortfall-1); //remove 1 incase of rounding errors
+        }
+        
+
+        uint256 liquidityAvailable = want.balanceOf(address(ironBankToken));
+        uint256 remainingCredit = Math.min(liquidity, liquidityAvailable);
+
+        
         //our current supply rate.
         //we only calculate once because it is expensive
         uint256 currentSR = currentSupplyRate();
@@ -276,7 +312,7 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
         //we have internal credit limit. it is function on our own assets invested
         //this means we can always repay our debt from our capital
         uint256 maxCreditDesired = vault.strategies(address(this)).totalDebt.mul(maxIronBankLeverage);
-        uint256 remainingCredit = ironBankRemainingCredit();
+
 
         //minIncrement must be > 0
         if(maxCreditDesired <= step){
@@ -288,14 +324,9 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
 
         //we start at 1 to save some gas
         uint256 increment = 1;
-
-        //repay debt if iron bank wants it back
-        if(remainingCredit < outstandingDebt){
-            borrowMore = false;
-            amount = outstandingDebt - remainingCredit;
-        }
+  
         // if we have too much debt we return
-        else if(maxCreditDesired < outstandingDebt){
+        if(maxCreditDesired < outstandingDebt){
             borrowMore = false;
             amount = outstandingDebt - maxCreditDesired;
         }
@@ -317,7 +348,7 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
         }else{
 
             while(minIncrement.mul(increment) <= outstandingDebt){
-                ironBankBR = ironBankBorrowRate(minIncrement.mul(increment), false);
+                ironBankBR = ironBankBorrowRate(minIncrement.mul(increment), true);
 
                 //we do increment before the if statement here
                 increment++;
@@ -341,24 +372,6 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
         if (amount < debtThreshold) { 
             amount = 0;
         }
-     }
-
-     function ironBankRemainingCredit() public view returns (uint256 available) {
-
-        (, uint256 liquidity,) = ironBank.getAccountLiquidity(address(this));
-        if(liquidity == 0){
-            return 0;
-        }
-
-        uint256 underlyingPrice = ironBank.oracle().getUnderlyingPrice(address(ironBankToken));
-
-        if(underlyingPrice == 0){
-            return 0;
-        }
-        uint256 liquidityAvailable = want.balanceOf(address(ironBankToken));
-
-        available = liquidity.mul(1e18).div(underlyingPrice);
-        available = Math.min(available, liquidityAvailable);
      }
 
      function ironBankOutstandingDebtStored() public view returns (uint256 available) {
@@ -549,11 +562,12 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
         _loss = 0; //for clarity. also reduces bytesize
 
         if (cToken.balanceOf(address(this)) == 0) {
+
             uint256 wantBalance = want.balanceOf(address(this));
             //no position to harvest
             //but we may have some debt to return
             //it is too expensive to free more debt in this method so we do it in adjust position
-            _debtPayment = Math.min(wantBalance, _debtOutstanding);
+            _debtPayment = Math.min(wantBalance, _debtOutstanding);           
             return (_profit, _loss, _debtPayment);
         }
         (uint256 deposits, uint256 borrows) = getLivePosition();
@@ -589,6 +603,8 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
             _loss = debt - balance;
             _debtPayment = Math.min(wantBalance, _debtOutstanding);
         }
+
+
     }
 
     /*
@@ -605,6 +621,7 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
 
         //start off by borrowing or returning:
         (bool borrowMore, uint256 amount) = internalCreditOfficer();
+
 
         //if repaying we use debOutstanding
         if(!borrowMore){
@@ -831,7 +848,7 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
         uint256 ibDebt = ironBankToken.borrowBalanceCurrent(address(this));
         _withdrawSome(ibDebt);
         uint256 available  = Math.min(ibDebt, want.balanceOf(address(this)));
-        cToken.repayBorrow(available);
+        ironBankToken.repayBorrow(available);
 
 
         //we dont use getCurrentPosition() because it won't be exact
@@ -859,7 +876,12 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
 
         (, , uint256 borrowBalance, ) = cToken.getAccountSnapshot(address(this));
 
-        require(borrowBalance == 0); //, "DELEVERAGE_FIRST"
+        require(borrowBalance < debtThreshold); //, "DELEVERAGE_FIRST"
+
+        //return our iron bank deposit:
+        //state changing
+        uint256 ibBorrows = ironBankToken.borrowBalanceCurrent(address(this));
+        ironBankToken.repayBorrow(Math.min(ibBorrows, want.balanceOf(address(this))));
 
         want.safeTransfer(_newStrategy, want.balanceOf(address(this)));
 

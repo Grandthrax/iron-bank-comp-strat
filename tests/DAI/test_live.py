@@ -6,20 +6,88 @@ from useful_methods import genericStateOfStrat, withdraw, stateOfVault,stateOfSt
 import random
 import brownie
 
-def test_screenshot(live_vault_dai2,live_vault_dai3,live_strategy_dai3, Contract, web3,live_gov, accounts, chain, cdai, comp, dai, live_strategy_dai2,currency, whale,samdev):
+def test_screenshot(live_vault_dai, Contract,usdc, web3, accounts, chain, cdai, comp, dai, live_strategy, currency, whale,samdev,creamdev, ibdai,ironbank):
     strategist = samdev
-    strategy = live_strategy_dai3
+    strategy = live_strategy
+    
 
-    vault = live_vault_dai3
+    vault = live_vault_dai
 
-    stateOfStrat(strategy, dai, comp)
-    genericStateOfVault(vault, dai)
+   # stateOfStrat(strategy, dai, comp)
+   # genericStateOfVault(vault, dai)
 
+    print("iron borrow: ", strategy.ironBankBorrowRate(0, True))
+    print("current supply: ", strategy.currentSupplyRate())
+    print("credit officer", strategy.internalCreditOfficer())
+    print("remaining credit", strategy.ironBankRemainingCredit()/1e18)
+    print("iron bank outstanding", strategy.ironBankOutstandingDebtStored()/1e18)
+
+    #strategy.harvest({'from': strategist})
+
+    
+
+    #stateOfStrat(strategy, currency, comp)
+    #genericStateOfVault(vault, currency)
+    #genericStateOfStrat(strategy,currency, vault )
+
+def test_migrate(live_vault_dai, Strategy, strategist,Contract,usdc, web3, accounts, chain, cdai, comp, dai, live_strategy, currency, whale,samdev,creamdev, ibdai,ironbank):
+        
+    strategist = samdev
+    strategy = live_strategy
+    vault = live_vault_dai
+
+    uinswap = '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D'
+    weth = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
+    ironcomptroller = '0xAB1c342C7bf5Ec5F02ADEA1c2270670bCa144CbB'
+    irontoken = '0x8e595470Ed749b85C6F7669de83EAe304C2ec68F'
+    comptroller = '0x3d9819210A31b4961b30EF54bE2aeD79B9c9Cd3B'
+    solo = '0x1E0447b19BB6EcFdAe1e4AE1694b0C3659614e4e'
+
+    strategy2 = strategist.deploy(Strategy,vault, cdai, solo, comptroller, ironcomptroller, irontoken, comp, uinswap, weth)
+    
+
+    #stateOfStrat(strategy, dai, comp)
+    #genericStateOfVault(vault, dai)
+    
+    ironbank._setCreditLimit(strategy, 0, {'from': creamdev})
+    print("credit officer", strategy.internalCreditOfficer())
     strategy.harvest({'from': strategist})
+    vault.migrateStrategy(strategy, strategy2, {'from': strategist})
+    stateOfStrat(strategy, dai, comp)
 
-    stateOfStrat(strategy, currency, comp)
-    genericStateOfVault(vault, currency)
-    genericStateOfStrat(strategy,currency, vault )
+    #vault.revokeStrategy(strategy,{'from': strategist} )
+    #strategy.setEmergencyExit({'from': strategist})
+
+    #strategy.harvest({'from': strategist})
+    #strategy.harvest({'from': strategist})
+    #strategy.setEmergencyExit({'from': strategist})
+    #strategy.harvest({'from': strategist})
+    ironbank._setCreditLimit(strategy2, 10_000 *1e18, {'from': creamdev})
+    strategy2.harvest({'from': strategist})
+
+    #stateOfStrat(strategy2, dai, comp)
+    #genericStateOfVault(vault, dai)
+
+    strategy2.tend({'from': strategist})
+    stateOfStrat(strategy2, dai, comp)
+    genericStateOfVault(vault, dai)
+   
+    #strategy2.harvest({'from': strategist2})
+    
+   # ironbank._setCreditLimit(strategy, 10_000 *1e18, {'from': creamdev})
+   # stateOfStrat(strategy_base, dai, comp)
+   # genericStateOfVault(vault, dai)
+   # strategy.harvest({'from': strategist})
+   # stateOfStrat(strategy_base, dai, comp)
+   # genericStateOfVault(vault, dai)
+
+    #print("iron borrow: ", strategy.ironBankBorrowRate(0, True))
+    #print("current supply: ", strategy.currentSupplyRate())
+
+    #print("iron bank outstanding", strategy.ironBankOutstandingDebtStored()/1e18)
+
+    #strategy.harvest({'from': strategist})
+
 
 def test_flash_loan(live_vault_dai2,live_vault_dai3,live_strategy_dai3, Contract, largerunningstrategy, web3,live_gov, accounts, chain, cdai, comp, dai, live_strategy_dai2,currency, whale,samdev):
     

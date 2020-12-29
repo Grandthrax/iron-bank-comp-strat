@@ -47,9 +47,9 @@ def stateOfStrat(strategy, dai, comp):
     print('borrows:', borrows/  (10 ** decimals)) 
     print('deposits:', deposits /  (10 ** decimals))
     realbalance = dai.balanceOf(strategy) + deposits - borrows
-    print('total assets real:', realbalance/  (10 ** decimals))  
+    print('total assets w/iron bank:', realbalance/  (10 ** decimals))  
     esassets =strategy.estimatedTotalAssets()+1
-    print('total assets estimate:', esassets/  (10 ** decimals))  
+    print('total LP assets:', esassets/  (10 ** decimals))  
     if deposits == 0:
         collat = 0 
     else:
@@ -74,6 +74,11 @@ def stateOfStrat(strategy, dai, comp):
     leverage = (irondebt*(apr-ironapr) + esassets*apr)/esassets
     print('Basic APR:', apr)
     print('Full APR:',leverage)
+    print("Harvest Trigger:", strategy.harvestTrigger(2000000 * 30 * 1e9))
+    print(
+        "Tend Trigger:", strategy.tendTrigger(2000000 * 30 * 1e9)
+    )  # 1m gas at 30 gwei
+    print("Emergency Exit:", strategy.emergencyExit())
 
 
 def genericStateOfStrat(strategy, currency, vault):

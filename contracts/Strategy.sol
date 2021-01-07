@@ -326,7 +326,8 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
         uint256 increment = 1;
   
         // if we have too much debt we return
-        if(maxCreditDesired < outstandingDebt){
+        //overshoot incase of dust
+        if(maxCreditDesired.mul(11).div(10) < outstandingDebt){
             borrowMore = false;
             amount = outstandingDebt - maxCreditDesired;
         }

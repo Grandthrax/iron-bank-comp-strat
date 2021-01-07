@@ -36,25 +36,27 @@ def whale(accounts, web3, weth,dai, gov, chain):
     #big binance7 wallet
     #acc = accounts.at('0xBE0eB53F46cd790Cd13851d5EFf43D12404d33E8', force=True)
     #big binance8 wallet
-    acc = accounts.at('0xf977814e90da44bfa03b6295a0616a897441acec', force=True)
+    #acc = accounts.at('0xf977814e90da44bfa03b6295a0616a897441acec', force=True)
+    #big binance1 wallet
+    acc = accounts.at('0x3f5CE5FBFe3E9af3971dD833D26bA9b5C936f0bE', force=True)
 
     #lots of weth account
     #if weth transfer fails change to new weth account
     wethAcc = accounts.at('0x1840c62fD7e2396e470377e6B2a833F3A1E96221', force=True)
 
-    weth.transfer(acc, weth.balanceOf(wethAcc),{"from": wethAcc} )
+    #weth.transfer(acc, weth.balanceOf(wethAcc),{"from": wethAcc} )
 
     
-    wethDeposit = 100 *1e18
+    #wethDeposit = 100 *1e18
     daiDeposit = 10000 *1e18
 
-    assert weth.balanceOf(acc)  > wethDeposit
+    #assert weth.balanceOf(acc)  > wethDeposit
     assert dai.balanceOf(acc) > daiDeposit
 
-    weth.transfer(gov, wethDeposit,{"from": acc} )
+    #weth.transfer(gov, wethDeposit,{"from": acc} )
     dai.transfer(gov, daiDeposit,{"from": acc} )
 
-    assert  weth.balanceOf(acc) > 0
+    #assert  weth.balanceOf(acc) > 0
     yield acc
 
 @pytest.fixture()
@@ -138,6 +140,9 @@ def want_generic(interface):
 def live_strategy(Strategy):
     yield Strategy.at('0x2F082A8f4A41FB81AC3cfb39Cf41Ca47378d692E')
 
+@pytest.fixture
+def live_strategy2(Strategy):
+    yield Strategy.at('0x202ac0A1c625fF468E8B4a54caB94b8bA11C0c21')    
 
 #0x1cfa165d8f6aa883fca19c58cf4e73ae2105b80ca9f0974abaf0d2bc50bf6ded <- new strat hash
 @pytest.fixture

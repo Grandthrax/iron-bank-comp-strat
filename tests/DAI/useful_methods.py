@@ -73,6 +73,7 @@ def stateOfStrat(strategy, dai, comp):
     apr= strategy.currentSupplyRate()*blocksPerYear/1e18
     leverage = (irondebt*(apr-ironapr) + esassets*apr)/esassets
     print('Basic APR:', apr)
+    print('Iron APR:',ironapr)
     print('Full APR:',leverage)
     print("Harvest Trigger:", strategy.harvestTrigger(2000000 * 30 * 1e9))
     print(

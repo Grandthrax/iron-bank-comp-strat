@@ -520,7 +520,7 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
     }
 
     //statechanging version
-    function getLivePosition() public returns (uint256 deposits, uint256 borrows) {
+    function getLivePosition() internal returns (uint256 deposits, uint256 borrows) {
         deposits = cToken.balanceOfUnderlying(address(this));
 
         //we can use non state changing now because we updated state with balanceOfUnderlying call

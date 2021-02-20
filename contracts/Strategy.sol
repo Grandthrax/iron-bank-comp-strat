@@ -7,11 +7,11 @@ import {BaseStrategy, StrategyParams, VaultAPI} from "@yearnvaults/contracts/Bas
 import "./Interfaces/DyDx/DydxFlashLoanBase.sol";
 import "./Interfaces/DyDx/ICallee.sol";
 
-import "@openzeppelinV3/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelinV3/contracts/math/SafeMath.sol";
-import "@openzeppelinV3/contracts/math/Math.sol";
-import "@openzeppelinV3/contracts/utils/Address.sol";
-import "@openzeppelinV3/contracts/token/ERC20/SafeERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/math/SafeMath.sol";
+import "@openzeppelin/contracts/math/Math.sol";
+import "@openzeppelin/contracts/utils/Address.sol";
+import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 
 import "./Interfaces/Compound/SCErc20I.sol";
 import "./Interfaces/Compound/SComptrollerI.sol";
@@ -36,6 +36,7 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
     SComptrollerI private ironBank;
     SCErc20I private ironBankToken;
     uint256 public maxIronBankLeverage = 4; //max leverage we will take from iron bank
+    uint256 public step = 10;
 
     //Only three tokens we use
     address private comp;
@@ -45,9 +46,9 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
     address private weth;
 
     //Operating variables
-    uint256 private collateralTarget = 0.73 ether; // 73%
-    uint256 private blocksToLiquidationDangerZone = 46500; // 7 days =  60*60*24*7/13
-    uint256 public step = 10;
+    uint256 public collateralTarget = 0.73 ether; // 73%
+    uint256 public blocksToLiquidationDangerZone = 46500; // 7 days =  60*60*24*7/13
+
 
     uint256 private minWant = 0; //Only lend if we have enough want to be worth it. Can be set to non-zero
     uint256 public minCompToSell = 0.1 ether; //used both as the threshold to sell but also as a trigger for harvest
@@ -86,14 +87,14 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
         want.safeApprove(address(ironBankToken), uint256(-1));
 
         // You can set these parameters on deployment to whatever you want
-        minReportDelay = 86400; // once per 24 hours
-        profitFactor = 100; // multiple before triggering harvest
-        debtThreshold = 50*1e18; // don't borrow borrowing if less than debtThreshold
+        maxReportDelay = 86400; // once per 24 hours
+        profitFactor = 15000; // multiple before triggering harvest
+        debtThreshold = 500*1e18; // don't bother borrowing if less than debtThreshold
 
         dyDxMarketId = _getMarketIdFromTokenAddress(_solo, address(want));
     }
 
-    function name() external override pure returns (string memory){
+    function name() external override view returns (string memory){
         return "IBLevComp";
     }
 
@@ -165,18 +166,6 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
         return want.balanceOf(address(this)).add(deposits).add(conservativeWant).sub(borrows).sub(ironBankDebt);
     }
 
-    //predicts our profit at next report
-    /*function expectedReturn() public view returns (uint256) {
-        uint256 estimateAssets = estimatedTotalAssets();
-
-        uint256 debt = vault.strategies(address(this)).totalDebt;
-        if (debt > estimateAssets) {
-            return 0;
-        } else {
-            return estimateAssets - debt;
-        }
-    }*/
-
     /*
      * Provide a signal to the keeper that `tend()` should be called.
      * (keepers are always reimbursed by yEarn)
@@ -230,7 +219,7 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
 
 
         // Should trigger if hadn't been called in a while
-        if (block.timestamp.sub(params.lastReport) >= minReportDelay) return true;
+        if (block.timestamp.sub(params.lastReport) >= maxReportDelay) return true;
 
         //check if vault wants lots of money back
         // dont return dust
@@ -290,16 +279,17 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
         liquidity = liquidity.mul(1e18).div(underlyingPrice);
         shortfall = shortfall.mul(1e18).div(underlyingPrice);
 
+        uint256 outstandingDebt = ironBankOutstandingDebtStored();
+
         //repay debt if iron bank wants its money back
-        if(shortfall > 0){
+        //we need careful to not just repay the bare minimun as it will go over immediately
+        if(shortfall > debtThreshold){
             //note we only borrow 1 asset so can assume all our shortfall is from it
-            return(false, shortfall-1); //remove 1 incase of rounding errors
+            return(false, Math.min(outstandingDebt, shortfall.mul(2))); //return double our shortfall
         }
-        
 
         uint256 liquidityAvailable = want.balanceOf(address(ironBankToken));
         uint256 remainingCredit = Math.min(liquidity, liquidityAvailable);
-
         
         //our current supply rate.
         //we only calculate once because it is expensive
@@ -307,12 +297,20 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
         //iron bank borrow rate
         uint256 ironBankBR = ironBankBorrowRate(0, true);
 
-        uint256 outstandingDebt = ironBankOutstandingDebtStored();
-
         //we have internal credit limit. it is function on our own assets invested
         //this means we can always repay our debt from our capital
         uint256 maxCreditDesired = vault.strategies(address(this)).totalDebt.mul(maxIronBankLeverage);
-
+  
+        // if we have too much debt we return
+        //overshoot incase of dust
+        if(maxCreditDesired.mul(11).div(10) < outstandingDebt){
+            borrowMore = false;
+            amount = outstandingDebt - maxCreditDesired;
+            if(amount < debtThreshold){
+                amount = 0;
+            }
+            return (false, amount);
+        }
 
         //minIncrement must be > 0
         if(maxCreditDesired <= step){
@@ -324,15 +322,9 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
 
         //we start at 1 to save some gas
         uint256 increment = 1;
-  
-        // if we have too much debt we return
-        //overshoot incase of dust
-        if(maxCreditDesired.mul(11).div(10) < outstandingDebt){
-            borrowMore = false;
-            amount = outstandingDebt - maxCreditDesired;
-        }
+
         //if sr is > iron bank we borrow more. else return
-        else if(currentSR > ironBankBR){            
+        if(currentSR > ironBankBR){            
             remainingCredit = Math.min(maxCreditDesired - outstandingDebt, remainingCredit);
 
             while(minIncrement.mul(increment) <= remainingCredit){
@@ -623,7 +615,6 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
         //start off by borrowing or returning:
         (bool borrowMore, uint256 amount) = internalCreditOfficer();
 
-
         //if repaying we use debOutstanding
         if(!borrowMore){
             _debtOutstanding = amount;
@@ -790,10 +781,17 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
      * Liquidate as many assets as possible to `want`, irregardless of slippage,
      * up to `_amount`. Any excess should be re-invested here as well.
      */
-    function liquidatePosition(uint256 _amountNeeded) internal override returns (uint256 _amountFreed) {
+    function liquidatePosition(uint256 _amountNeeded) internal override returns (uint256 _amountFreed, uint256 _loss) {
         uint256 _balance = want.balanceOf(address(this));
 
-        if (netBalanceLent().add(_balance) < _amountNeeded) {
+        uint256 assets = netBalanceLent().add(_balance);
+
+        uint256 debtOutstanding = vault.debtOutstanding();
+        if(debtOutstanding > assets){
+            _loss = debtOutstanding - assets;
+        }
+
+        if (assets < _amountNeeded) {
             //if we cant afford to withdraw we take all we can
             //withdraw all we can
             (uint256 deposits, uint256 borrows) = getLivePosition();
@@ -837,37 +835,6 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
         }
     }
 
-    /*
-     * Make as much capital as possible "free" for the Vault to take. Some slippage
-     * is allowed.
-     */
-    function exitPosition(uint256 _debtOutstanding) internal override returns (uint256 _profit,
-            uint256 _loss,
-            uint256 _debtPayment){
-
-        //we pay off idebt first
-        uint256 ibDebt = ironBankToken.borrowBalanceCurrent(address(this));
-        _withdrawSome(ibDebt);
-        uint256 available  = Math.min(ibDebt, want.balanceOf(address(this)));
-        ironBankToken.repayBorrow(available);
-
-
-        //we dont use getCurrentPosition() because it won't be exact
-        (uint256 deposits, uint256 borrows) = getLivePosition();
-
-        //1 token causes rounding error with withdrawUnderlying
-        if(cToken.balanceOf(address(this)) > 1){
-            _withdrawSome(deposits.sub(borrows));
-        }
-        _debtPayment = want.balanceOf(address(this));
-        if(_debtOutstanding > _debtPayment){
-            _loss = _debtOutstanding - _debtPayment;
-        }
-        else if(_debtPayment > _debtOutstanding){
-            _profit = _debtPayment - _debtOutstanding;
-            _debtPayment = _debtOutstanding;
-        }
-    }
 
     //lets leave
     //if we can't deleverage in one go set collateralFactor to 0 and call harvest multiple times until delevered

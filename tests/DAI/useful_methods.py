@@ -75,6 +75,7 @@ def stateOfStrat(strategy, dai, comp):
     print('Basic APR:', apr)
     print('Iron APR:',ironapr)
     print('Full APR:',leverage)
+    print("Internal Credit:", strategy.internalCreditOfficer())
     print("Harvest Trigger:", strategy.harvestTrigger(2000000 * 30 * 1e9))
     print(
         "Tend Trigger:", strategy.tendTrigger(2000000 * 30 * 1e9)
@@ -116,7 +117,7 @@ def genericStateOfVault(vault, currency):
 def assertCollateralRatio(strategy):
     deposits, borrows = strategy.getCurrentPosition()
     collat = borrows / deposits
-    assert collat <=strategy.collateralTarget()/1e18
+    assert collat <=(strategy.collateralTarget()+10)/1e18
 
 def stateOfVault(vault, strategy):
     print('\n----state of vault----')

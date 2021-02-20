@@ -23,8 +23,8 @@ def test_sweep(web3,strategy, dai,cdai, gov, comp):
 
     
 
-def test_apr_dai(web3, chain, comp, vault, smallrunningstrategy, whale, gov, dai, strategist):
-    strategy = smallrunningstrategy
+def test_apr_dai(web3, chain, comp, vault, largerunningstrategy, whale, gov, dai, strategist):
+    strategy = largerunningstrategy
     strategy.setProfitFactor(1, {"from": strategist} )
     assert(strategy.profitFactor() == 1)
     print(strategy.ironBankOutstandingDebtStored())
@@ -43,8 +43,8 @@ def test_apr_dai(web3, chain, comp, vault, smallrunningstrategy, whale, gov, dai
         waitBlock = 25
         print(f'\n----wait {waitBlock} blocks----')
         wait(waitBlock, chain)
+
         
-        #harvest(strategy, strategist, vault)
         strategy.harvest({'from': strategist})
         #stateOfStrat(enormousrunningstrategy, dai, comp)
         #stateOfVault(vault, enormousrunningstrategy)
@@ -72,7 +72,7 @@ def test_getting_too_close_to_liq(web3, chain, cdai, comp, vault, largerunningst
 
     stateOfStrat(largerunningstrategy, dai, comp)
     stateOfVault(vault, largerunningstrategy)
-    largerunningstrategy.setCollateralTarget(Wei('0.7498 ether'), {"from": gov} )
+    largerunningstrategy.setCollateralTarget(Wei('0.7495 ether'), {"from": gov} )
     deposit(Wei('1000 ether'), whale, dai, vault)
 
     balanceBefore = vault.totalAssets()
@@ -103,11 +103,20 @@ def test_getting_too_close_to_liq(web3, chain, cdai, comp, vault, largerunningst
 
         
     largerunningstrategy.tend({'from': gov})
-
-    largerunningstrategy.setCollateralTarget(Wei('0.73 ether'), {"from": gov} )
+    deposits, borrows = largerunningstrategy.getCurrentPosition()
+    collat = borrows / deposits
+    print("Collat ratio: ", collat)
     assert largerunningstrategy.tendTrigger(1e18) == False
+    largerunningstrategy.setCollateralTarget(Wei('0.73 ether'), {"from": gov} )
+    chain.mine(2)
+    chain.sleep(2)
+    assert largerunningstrategy.tendTrigger(1e18) == True
     largerunningstrategy.tend({'from': gov})
+    deposits, borrows = largerunningstrategy.getCurrentPosition()
+    collat = borrows / deposits
+    print("Collat ratio: ", collat)
     assertCollateralRatio(largerunningstrategy)
+    largerunningstrategy.harvest({'from': gov})
     stateOfStrat(largerunningstrategy, dai, comp)
     stateOfVault(vault, largerunningstrategy)
 

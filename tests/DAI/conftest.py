@@ -10,10 +10,14 @@ def currency(interface):
     #this one is weth:
     #yield interface.ERC20('0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2')
 @pytest.fixture
-def vault(gov, rewards, guardian, currency, pm):
-    Vault = pm(config["dependencies"][0]).Vault
-    vault = guardian.deploy(Vault, currency, gov, rewards, "", "")
+def vault(gov, rewards, guardian, currency, pm, Vault):
+
+    vault = gov.deploy(Vault)
+    vault.initialize(currency, gov, rewards, "", "", guardian)
+    vault.setDepositLimit(2 ** 256 - 1, {"from": gov})
+
     yield vault
+
 @pytest.fixture
 def rewards(gov):
     yield gov  # TODO: Add rewards contract
@@ -247,8 +251,8 @@ def strategy(strategist,gov, keeper, vault,  strategy_base, cdai):
     
     strategy = strategy_base
     vault.addStrategy(
-        strategy,
-        2 ** 256 - 1,2 ** 256 - 1, 
+        strategy, 10_000,
+        2 ** 256 - 1, 
         1000,  # 0.5% performance fee for Strategist
         {"from": gov},
     )
@@ -277,12 +281,12 @@ def smallrunningstrategy(gov, strategy,ironbank, dai,creamdev, ibdai, vault, wha
     yield strategy
 
 @pytest.fixture()
-def largerunningstrategy(gov, strategy, dai, vault, whale):
+def largerunningstrategy(gov,ironbank, strategy,creamdev, dai, vault, whale):
 
     amount = Wei('499000 ether')
     dai.approve(vault, amount, {'from': whale})
     vault.deposit(amount, {'from': whale})    
-
+    ironbank._setCreditLimit(strategy, 1_000_000 *1e18, {'from': creamdev})
     strategy.harvest({'from': gov})
     
     #do it again with a smaller amount to replicate being this full for a while

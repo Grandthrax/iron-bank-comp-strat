@@ -2,7 +2,7 @@
 pragma solidity ^0.6.12;
 pragma experimental ABIEncoderV2;
 
-import {BaseStrategy, StrategyParams, VaultAPI} from "@yearnvaults/contracts/BaseStrategy.sol";
+import "@yearnvaults/contracts/BaseStrategy.sol";
 
 import "./Interfaces/DyDx/DydxFlashLoanBase.sol";
 import "./Interfaces/DyDx/ICallee.sol";
@@ -23,24 +23,25 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
     using Address for address;
     using SafeMath for uint256;
 
+    // Comptroller address for compound.finance
+    address private compound;
+
+    //IRON BANK
+    address private ironBank;
+    address private ironBankToken;
+
+    //Only three tokens we use
+    address private comp;
+    address private cToken;
+    address private weth;
+
+    address private uniswapRouter;
+
     //Flash Loan Providers
     address public SOLO;
 
-    // Comptroller address for compound.finance
-    address public compound;
-
-    //IRON BANK
-    address public ironBank;
-    address public ironBankToken;
     uint256 public maxIronBankLeverage = 4; //max leverage we will take from iron bank
     uint256 public step = 10;
-
-    //Only three tokens we use
-    address public comp;
-    address public cToken;
-
-    address public uniswapRouter;
-    address public weth;
 
     //Operating variables
     uint256 public collateralTarget = 0.73 ether; // 73%

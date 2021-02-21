@@ -63,7 +63,10 @@ def test_apr_dai(web3, chain, comp, vault, smallrunningstrategy, whale, gov, dai
         assert time != 0
         apr = (totalReturns/startingBalance) * (blocks_per_year / time)
         print(f'implied apr: {apr:.8%}')
+    stateOfStrat(strategy, dai, comp)
+    stateOfVault(vault, strategy)
     vault.withdraw(vault.balanceOf(whale), {'from': whale})
+    
 
 
 

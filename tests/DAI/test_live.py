@@ -6,6 +6,44 @@ from useful_methods import genericStateOfStrat, withdraw, stateOfVault,stateOfSt
 import random
 import brownie
 
+def test_connect_to_live(live_vault_dai, daddy, Contract,Strategy, web3, accounts, chain, cdai, comp, dai, currency, whale, samdev,creamdev, ibdai,ironbank):
+    strategist = samdev
+    
+    old_strategy = Strategy.at('0x4031afd3B0F71Bace9181E554A9E680Ee4AbE7dF')
+
+    vault = live_vault_dai
+    
+    uinswap = '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D'
+    weth = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
+    ironcomptroller = '0xAB1c342C7bf5Ec5F02ADEA1c2270670bCa144CbB'
+    irontoken = '0x8e595470Ed749b85C6F7669de83EAe304C2ec68F'
+    comptroller = '0x3d9819210A31b4961b30EF54bE2aeD79B9c9Cd3B'
+    solo = '0x1E0447b19BB6EcFdAe1e4AE1694b0C3659614e4e'
+
+    strategy = strategist.deploy(Strategy,vault, cdai, solo, comptroller, ironcomptroller, irontoken, comp, uinswap, weth)
+
+    vault.updateStrategyDebtRatio(old_strategy, 8400, {"from": daddy})
+    vault.addStrategy(
+        strategy, 400,
+        2 ** 256 - 1, 
+        1000,  
+        {"from": daddy},
+    )
+    ironbank._setCreditLimit(strategy, 2_000_000 * 1e18, {'from': creamdev})
+
+    old_strategy.harvest({'from': strategist})
+    old_strategy.harvest({'from': strategist})
+
+    strategy.harvest({'from': strategist})
+    strategy.harvest({'from': strategist})
+
+    stateOfStrat(strategy, dai, comp)
+    #stateOfVault(vault, strategy)
+
+    #stateOfStrat(strategy, currency, comp)
+    genericStateOfVault(vault, dai)
+    #genericStateOfStrat(strategy,currency, vault )
+
 def test_screenshot(live_vault_dai, Contract,usdc, web3, accounts, chain, cdai, comp, dai, live_strategy2, live_strategy, currency, whale, samdev,creamdev, ibdai,ironbank):
     strategist = samdev
 

@@ -75,6 +75,10 @@ def samdev(accounts):
     yield accounts.at('0xC3D6880fD95E06C816cB030fAc45b3ffe3651Cb0', force=True)
 
 @pytest.fixture
+def daddy(accounts):
+    yield accounts.at('0xFEB4acf3df3cDEA7399794D0869ef76A6EfAff52', force=True)
+
+@pytest.fixture
 def creamdev(accounts):
     yield accounts.at('0x6D5a7597896A703Fe8c85775B23395a48f971305', force=True)
 
@@ -144,14 +148,11 @@ def want_generic(interface):
 def live_strategy(Strategy):
     yield Strategy.at('0x2F082A8f4A41FB81AC3cfb39Cf41Ca47378d692E')
 
-@pytest.fixture
-def live_strategy2(Strategy):
-    yield Strategy.at('0x202ac0A1c625fF468E8B4a54caB94b8bA11C0c21')    
 
 #0x1cfa165d8f6aa883fca19c58cf4e73ae2105b80ca9f0974abaf0d2bc50bf6ded <- new strat hash
 @pytest.fixture
 def live_vault_dai(Vault):
-    yield Vault.at('0x07dbC20B84fF63F3cc542F6A22E5a71cbA5670A4')
+    yield Vault.at('0x19D3364A399d251E894aC732651be8B0E4e85001')
 
 @pytest.fixture
 def dai(interface):

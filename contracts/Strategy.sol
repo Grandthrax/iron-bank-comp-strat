@@ -38,7 +38,7 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
     address private uniswapRouter;
 
     //Flash Loan Providers
-    address public SOLO;
+    address private SOLO;
 
     uint256 public maxIronBankLeverage = 4; //max leverage we will take from iron bank
     uint256 public step = 10;
@@ -505,8 +505,6 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
         }else{
             supply = 0;
         }
-
-
     }
 
     //Returns the current position
@@ -644,23 +642,21 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
         //need to be careful in case this pushes to liquidation
         if (position > minWant) {
             //if dydx is not active we just try our best with basic leverage
-            if (!DyDxActive) {
-                uint i = 5;
-                while(position > 0){
-                    position = position.sub(_noFlashLoan(position, deficit));
-                    i++;
-                }
-            } else {
-                //if there is huge position to improve we want to do normal leverage. it is quicker
-                if (position > want.balanceOf(SOLO)) {
-                    position = position.sub(_noFlashLoan(position, deficit));
-                }
+            uint i = 0;
+            uint256 toBeat = DyDxActive ? want.balanceOf(SOLO) : 0;
 
-                //flash loan to position
-                if(position > 0){
-                    doDyDxFlashLoan(deficit, position);
+            //if there is huge position to improve we want to do normal leverage. it is quicker            
+            while(position > toBeat){
+                position = position.sub(_noFlashLoan(position, deficit));
+                i++;
+                if(i > 4){
+                    break;
                 }
+            }
 
+            //flash loan to position
+            if(DyDxActive &&position > 0){
+                doDyDxFlashLoan(deficit, position);
             }
         }
 

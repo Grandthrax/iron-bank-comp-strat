@@ -23,8 +23,8 @@ def test_sweep(web3,strategy, dai,cdai, gov, comp):
 
     
 
-def test_apr_dai(web3, chain, comp, vault, largerunningstrategy, whale, gov, dai, strategist):
-    strategy = largerunningstrategy
+def test_apr_dai(web3, chain, comp, vault, smallrunningstrategy, whale, gov, dai, strategist):
+    strategy = smallrunningstrategy
     strategy.setProfitFactor(1, {"from": strategist} )
     assert(strategy.profitFactor() == 1)
     print(strategy.ironBankOutstandingDebtStored())

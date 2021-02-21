@@ -96,10 +96,10 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
     }
 
     function _isAuthorized() internal view {
-        require(msg.sender == strategist || msg.sender == governance(), "!authorized");
+        require(msg.sender == strategist || msg.sender == governance());
     }
     function _isGov() internal view {
-        require(msg.sender == governance(), "!authorized");
+        require(msg.sender == governance());
     }
 
     /*
@@ -303,10 +303,10 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
         if(maxCreditDesired.mul(11).div(10) < outstandingDebt){
             borrowMore = false;
             amount = outstandingDebt - maxCreditDesired;
-            if(amount < debtThreshold){
-                amount = 0;
+            if(amount >= debtThreshold){
+                return (false, amount);
             }
-            return (false, amount);
+            amount = 0;
         }
 
         //minIncrement must be > 0
@@ -321,8 +321,11 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
         uint256 increment = 1;
 
         //if sr is > iron bank we borrow more. else return
-        if(currentSR > ironBankBR){            
-            remainingCredit = Math.min(maxCreditDesired - outstandingDebt, remainingCredit);
+        if(currentSR > ironBankBR){       
+            if(maxCreditDesired < outstandingDebt){
+                maxCreditDesired = outstandingDebt;
+            }  
+            remainingCredit = Math.min(maxCreditDesired.sub(outstandingDebt), remainingCredit);
 
             while(minIncrement.mul(increment) <= remainingCredit){
                 ironBankBR = ironBankBorrowRate(minIncrement.mul(increment), false);

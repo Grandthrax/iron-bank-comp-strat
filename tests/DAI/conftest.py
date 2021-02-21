@@ -264,7 +264,7 @@ def smallrunningstrategy(gov, strategy,ironbank, dai,creamdev, ibdai, vault, wha
     dai.approve(ibdai, 2 ** 256 - 1, {'from': whale})
     ironbank._setCreditLimit(strategy, 1_000_000 *1e18, {'from': creamdev})
 
-    ibdai.mint(100_1000, {'from': whale})
+    ibdai.mint(100_000, {'from': whale})
 
     amount = Wei('1000 ether')
     dai.approve(vault, amount, {'from': whale})

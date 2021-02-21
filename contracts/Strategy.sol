@@ -655,7 +655,7 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
             }
 
             //flash loan to position
-            if(DyDxActive &&position > 0){
+            if(DyDxActive && position > 0){
                 doDyDxFlashLoan(deficit, position);
             }
         }

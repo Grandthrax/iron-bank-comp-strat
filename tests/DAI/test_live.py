@@ -36,6 +36,7 @@ def test_connect_to_live(live_vault_dai, daddy, Contract,Strategy, web3, account
 
     strategy.harvest({'from': strategist})
     strategy.harvest({'from': strategist})
+    strategy.harvest({'from': strategist})
 
     stateOfStrat(strategy, dai, comp)
     #stateOfVault(vault, strategy)

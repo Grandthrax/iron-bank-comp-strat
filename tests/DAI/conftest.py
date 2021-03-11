@@ -148,6 +148,10 @@ def want_generic(interface):
 def live_strategy(Strategy):
     yield Strategy.at('0x2F082A8f4A41FB81AC3cfb39Cf41Ca47378d692E')
 
+@pytest.fixture
+def live_strat_030(Strategy):
+    yield Strategy.at('0x77b7CD137Dd9d94e7056f78308D7F65D2Ce68910')
+
 
 #0x1cfa165d8f6aa883fca19c58cf4e73ae2105b80ca9f0974abaf0d2bc50bf6ded <- new strat hash
 @pytest.fixture

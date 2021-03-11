@@ -43,13 +43,13 @@ def stateOfStrat(strategy, dai, comp):
     deposits, borrows = strategy.getCurrentPosition()
     compBal = comp.balanceOf(strategy)
     print('Comp:', compBal /  (10 ** decimals))
-    print('DAI:',dai.balanceOf(strategy)/  (10 ** decimals))
-    print('borrows:', borrows/  (10 ** decimals)) 
-    print('deposits:', deposits /  (10 ** decimals))
+    print('DAI:', dai.balanceOf(strategy)/  (10 ** decimals))
+    print('borrows:', "{:,.2f}".format(borrows/  (10 ** decimals))) 
+    print('deposits:', "{:,.2f}".format(deposits /  (10 ** decimals)))
     realbalance = dai.balanceOf(strategy) + deposits - borrows
-    print('total assets w/iron bank:', realbalance/  (10 ** decimals))  
+    print('total assets w/iron bank:', "{:,.2f}".format(realbalance/  (10 ** decimals)))
     esassets =strategy.estimatedTotalAssets()+1
-    print('total LP assets:', esassets/  (10 ** decimals))  
+    print('total LP assets:', "{:,.2f}".format(esassets/  (10 ** decimals)))
     if deposits == 0:
         collat = 0 
     else:
@@ -58,7 +58,7 @@ def stateOfStrat(strategy, dai, comp):
 
 
     irondebt = strategy.ironBankOutstandingDebtStored()
-    print('Iron Bank Debt:', irondebt/  (10 ** decimals))  
+    print('Iron Bank Debt:', "{:,.2f}".format(irondebt/  (10 ** decimals)))
     print(f'calculated collat: {collat:.5%}')
     storedCollat = strategy.storedCollateralisation()/  (10 ** decimals)
     print(f'stored collat: {storedCollat:.5%}') 
@@ -72,9 +72,9 @@ def stateOfStrat(strategy, dai, comp):
 
     apr= strategy.currentSupplyRate()*blocksPerYear/1e18
     leverage = (irondebt*(apr-ironapr) + esassets*apr)/esassets
-    print('Basic APR:', apr)
-    print('Iron APR:',ironapr)
-    print('Full APR:',leverage)
+    print('Basic APR:', "{:.0%}".format(apr))
+    print('Iron APR:', "{:.0%}".format(ironapr))
+    print('Full APR:', "{:.0%}".format(leverage))
     print("Internal Credit:", strategy.internalCreditOfficer())
     print("Harvest Trigger:", strategy.harvestTrigger(2000000 * 30 * 1e9))
     print(
@@ -109,10 +109,10 @@ def genericStateOfVault(vault, currency):
     decimals = currency.decimals()
     print(f"\n----state of {vault.name()} vault----")
     balance = vault.totalAssets()/  (10 ** decimals)
-    print(f"Total Assets: {balance:.5f}")
+    print(f"Total Assets: {balance:,.2f}")
     balance = vault.totalDebt()/  (10 ** decimals)
-    print("Loose balance in vault:", currency.balanceOf(vault)/  (10 ** decimals))
-    print(f"Total Debt: {balance:.5f}")
+    print("Loose balance in vault:", "{:,.2f}".format(currency.balanceOf(vault)/  (10 ** decimals)))
+    print(f"Total Debt: {balance:,.2f}")
 
 def assertCollateralRatio(strategy):
     deposits, borrows = strategy.getCurrentPosition()
@@ -124,10 +124,10 @@ def stateOfVault(vault, strategy):
     strState = vault.strategies(strategy)
     totalDebt = strState[5].to('ether')
     totalReturns = strState[6].to('ether')
-    print(f'Total Strategy Debt: {totalDebt:.5f}')
-    print(f'Total Strategy Returns: {totalReturns:.5f}')
+    print(f'Total Strategy Debt: {totalDebt:,.2f}')
+    print(f'Total Strategy Returns: {totalReturns:,.2f}')
     balance = vault.totalAssets().to('ether')
-    print(f'Total Assets: {balance:.5f}')
+    print(f'Total Assets: {balance:,.2f}')
 
 def wait(blocks, chain):
     print(f'\nWaiting {blocks} blocks')

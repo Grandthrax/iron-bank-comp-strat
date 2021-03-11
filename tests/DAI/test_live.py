@@ -6,7 +6,7 @@ from useful_methods import genericStateOfStrat, withdraw, stateOfVault,stateOfSt
 import random
 import brownie
 
-def test_connect_to_live(live_vault_dai, daddy, Contract,Strategy, web3, accounts, chain, cdai, comp, dai, currency, whale, samdev,creamdev, ibdai,ironbank):
+def test_connect_to_live(live_vault_dai, daddy, Contract,Strategy, live_strat_030, web3, accounts, chain, cdai, comp, dai, currency, whale, samdev,creamdev, ibdai,ironbank):
     strategist = samdev
     
     old_strategy = Strategy.at('0x4031afd3B0F71Bace9181E554A9E680Ee4AbE7dF')
@@ -20,23 +20,28 @@ def test_connect_to_live(live_vault_dai, daddy, Contract,Strategy, web3, account
     comptroller = '0x3d9819210A31b4961b30EF54bE2aeD79B9c9Cd3B'
     solo = '0x1E0447b19BB6EcFdAe1e4AE1694b0C3659614e4e'
 
-    strategy = strategist.deploy(Strategy,vault, cdai, solo, comptroller, ironcomptroller, irontoken, comp, uinswap, weth)
+    #strategy = strategist.deploy(Strategy,vault, cdai, solo, comptroller, ironcomptroller, irontoken, comp, uinswap, weth)
+    strategy = live_strat_030
+    #vault.updateStrategyDebtRatio(old_strategy, 8400, {"from": daddy})
+    #vault.updateStrategyDebtRatio(strategy, 100, {"from": daddy})
+    #genericStateOfVault(vault, dai)
+    #vault.addStrategy(
+    #    strategy, 400,
+    #    2 ** 256 - 1, 
+    #    1000,  
+    #    {"from": daddy},
+    #)
+    print(vault.management())
+    stateOfStrat(strategy, dai, comp)
+    #ironbank._setCreditLimit(strategy, 20_000_000 * 1e18, {'from': creamdev})
 
-    vault.updateStrategyDebtRatio(old_strategy, 8400, {"from": daddy})
-    vault.addStrategy(
-        strategy, 400,
-        2 ** 256 - 1, 
-        1000,  
-        {"from": daddy},
-    )
-    ironbank._setCreditLimit(strategy, 2_000_000 * 1e18, {'from': creamdev})
-
-    old_strategy.harvest({'from': strategist})
-    old_strategy.harvest({'from': strategist})
+    #old_strategy.harvest({'from': strategist})
+    #old_strategy.harvest({'from': strategist})
+ 
 
     strategy.harvest({'from': strategist})
     strategy.harvest({'from': strategist})
-    strategy.harvest({'from': strategist})
+    #strategy.harvest({'from': strategist})
 
     stateOfStrat(strategy, dai, comp)
     #stateOfVault(vault, strategy)

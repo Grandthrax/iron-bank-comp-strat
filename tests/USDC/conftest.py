@@ -280,7 +280,7 @@ def smallrunningstrategy(gov, strategy,ironbank, usdc,creamdev, cyusdc, vault, w
     decimals = usdc.decimals()
     ironbank._setCreditLimit(strategy, 1_000_000 *1e18, {'from': creamdev})
 
-    cyusdc.mint(100_000*(10 ** decimals), {'from': whale})
+    cyusdc.mint(10_000_000*(10 ** decimals), {'from': whale})
 
     amount = 10_000 * (10 ** decimals)
     usdc.approve(vault, amount, {'from': whale})

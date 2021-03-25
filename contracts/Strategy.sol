@@ -13,7 +13,7 @@ import "@openzeppelin/contracts/math/Math.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 
-import "./Interfaces/Compound/SCErc20I.sol";
+import "./Interfaces/Cream/IronBankCTokenI.sol";
 import "./Interfaces/Compound/SComptrollerI.sol";
 import "./Interfaces/UniswapInterfaces/IUni.sol";
 
@@ -86,7 +86,7 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
         // You can set these parameters on deployment to whatever you want
         maxReportDelay = 86400; // once per 24 hours
         profitFactor = 15000; // multiple before triggering harvest
-        debtThreshold = 500*1e18; // don't bother borrowing if less than debtThreshold
+        debtThreshold = 500*1e6; // don't bother borrowing if less than debtThreshold
 
         dyDxMarketId = _getMarketIdFromTokenAddress(_solo, address(want));
     }
@@ -374,7 +374,10 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
 
 
      function ironBankBorrowRate(uint256 amount, bool repay) public view returns (uint256) {
-        uint256 cashPrior = want.balanceOf(address(ironBankToken));
+         
+        return IronBankCTokenI(ironBankToken).estimateBorrowRatePerBlockAfterChange(amount, repay);
+
+        /*uint256 cashPrior = want.balanceOf(address(ironBankToken));
 
         uint256 borrows = SCErc20I(ironBankToken).totalBorrows();
         uint256 reserves = SCErc20I(ironBankToken).totalReserves();
@@ -392,7 +395,7 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
 
         uint256 borrowRate = model.getBorrowRate(cashChange, borrowChange, reserves);
 
-        return borrowRate;
+        return borrowRate;*/
     }
 
 
